@@ -1,3 +1,6 @@
+# Datasets downloaded by the download_datasets.py script
+datasets/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
