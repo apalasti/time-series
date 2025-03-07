@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -76,6 +77,25 @@ def plot_classification_dataset(series: np.ndarray, labels: np.ndarray):
         if 0 < j:
             fig.add_vline(x=start, line_dash="dash", line_color="gray")
     return fig
+
+
+def plot_ts(df: pd.DataFrame):
+    fig = make_subplots(
+        rows=len(df.columns),
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.02
+    )
+
+    for i, col in enumerate(df.columns):
+        fig.add_trace(go.Scatter(x=df.index, y=df[col], name=col, showlegend=False), row=i+1, col=1)
+        fig.update_yaxes(title_text=col, row=i+1, col=1)
+
+    return fig.update_layout(
+        height=150*len(df.columns),
+        showlegend=False,
+        margin=dict(l=15, r=15, t=30, b=30)
+    )
 
 
 def imbalance_ratio(labels: np.ndarray) -> float:
