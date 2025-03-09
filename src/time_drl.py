@@ -36,6 +36,7 @@ class TimeDRL(nn.Module):
         d_model: int,
         n_heads: int,
         n_layers: int,
+        token_embedding_kernel_size: int,
         dropout: float,
     ) -> None:
         super().__init__()
@@ -44,12 +45,19 @@ class TimeDRL(nn.Module):
         self.input_channels = input_channels
         self.d_model = d_model
 
-        self.token_embeddings = TokenEmbedding(self.input_channels, d_model)
+        # NOTE: The code implementing the paper just prepends the [CLS]
+        self.cls_token = nn.Parameter(
+            torch.randn(1, 1, input_channels, dtype=torch.float), requires_grad=True
+        )
+        self.token_embeddings = TokenEmbedding(
+            self.input_channels, d_model, token_embedding_kernel_size
+        )
         self.positional_embeddings = nn.Parameter(
             # +1 Positional Embedding for the [CLS] token
             torch.randn(self.ts_len + 1, d_model, dtype=torch.float),
             requires_grad=True,
         )
+        self.dropout = nn.Dropout(p=dropout)
 
         self.encoder = nn.TransformerEncoder(
             encoder_layer=nn.TransformerEncoderLayer(
@@ -64,12 +72,17 @@ class TimeDRL(nn.Module):
             norm=nn.LayerNorm(self.d_model),
         )
 
-        # NOTE: The code implementing the paper just prepends the [CLS]
-        self.cls_token = nn.Parameter(
-            torch.randn(1, 1, input_channels, dtype=torch.float), requires_grad=True
+        self.reconstructor = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(self.d_model, self.input_channels),
         )
-
-        self.dropout = nn.Dropout(p=dropout)
+        self.contrastive_predictor = nn.Sequential(
+            nn.Linear(self.d_model, self.d_model // 2),
+            nn.BatchNorm1d(self.d_model // 2),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(self.d_model // 2, self.d_model),
+        )
 
     def forward(self, x: Tensor):
         B, T, C = x.shape
@@ -87,9 +100,20 @@ class TimeDRL(nn.Module):
 
 if __name__ == "__main__":
     model = TimeDRL(
-        ts_len=168, input_channels=3, d_model=1408, n_heads=11, n_layers=8, dropout=0.2
-    )
-    print(
-        f"Encoder parameters: {sum(p.numel() for p in model.encoder.parameters()):,}"
+        ts_len=168,
+        input_channels=3 * 4,
+        d_model=1408,
+        n_heads=11,
+        n_layers=8,
+        token_embedding_kernel_size=5,
+        dropout=0.2,
     )
     print(model)
+    print(f"Encoder parameters: {sum(p.numel() for p in model.encoder.parameters()):,}")
+    print(f"Token embedder parameters: {sum(p.numel() for p in model.token_embeddings.parameters()):,}")
+    print(
+        f"Reconstructor parameters: {sum(p.numel() for p in model.reconstructor.parameters()):,}"
+    )
+    print(
+        f"Contrastive predictor parameters: {sum(p.numel() for p in model.contrastive_predictor.parameters()):,}"
+    )
