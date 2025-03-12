@@ -1,5 +1,3 @@
-from abc import ABC, abstractmethod
-
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -24,14 +22,14 @@ class TokenEmbedding(nn.Module):
         )
 
     def forward(self, x: Tensor):
-        x = torch.transpose(self.conv(x.permute(0, 2, 1)), (1, 2))
-        return x
+        x = self.conv(x.permute(0, 2, 1))
+        return torch.transpose(x, 1, 2)
 
 
 class TimeDRL(nn.Module):
     def __init__(
         self,
-        ts_len: int,
+        sequence_len: int,
         input_channels: int,
         d_model: int,
         n_heads: int,
@@ -41,7 +39,7 @@ class TimeDRL(nn.Module):
     ) -> None:
         super().__init__()
 
-        self.ts_len = ts_len
+        self.sequence_len = sequence_len
         self.input_channels = input_channels
         self.d_model = d_model
 
@@ -53,8 +51,8 @@ class TimeDRL(nn.Module):
             self.input_channels, d_model, token_embedding_kernel_size
         )
         self.positional_embeddings = nn.Parameter(
-            # +1 Positional Embedding for the [CLS] token
-            torch.randn(self.ts_len + 1, d_model, dtype=torch.float),
+            # +1 Positional Embedding for the [CLS] token
+            torch.randn(self.sequence_len + 1, d_model, dtype=torch.float),
             requires_grad=True,
         )
         self.dropout = nn.Dropout(p=dropout)
@@ -66,7 +64,7 @@ class TimeDRL(nn.Module):
                 batch_first=True,
                 dropout=dropout,
                 dim_feedforward=4*d_model,
-                activation=nn.GELU,
+                activation="gelu",
             ),
             num_layers=n_layers,
             norm=nn.LayerNorm(self.d_model),
@@ -86,7 +84,11 @@ class TimeDRL(nn.Module):
 
     def forward(self, x: Tensor):
         B, T, C = x.shape
-        assert T == self.ts_len and C == self.input_channels
+        assert T == self.sequence_len and C == self.input_channels, (
+            f"Input tensor shape {x.shape} does not match expected dimensions. "
+            f"Expected sequence length: {self.sequence_len}, got {T}. "
+            f"Expected input channels: {self.input_channels}, got {C}."
+        )
 
         x = torch.cat([self.cls_token.expand(B, -1, -1), x], dim=1)  # Preprend [CLS]
         x = self.token_embeddings(x)  # Create token embeddings
@@ -100,7 +102,7 @@ class TimeDRL(nn.Module):
 
 if __name__ == "__main__":
     model = TimeDRL(
-        ts_len=168,
+        sequence_len=168,
         input_channels=3 * 4,
         d_model=1408,
         n_heads=11,
