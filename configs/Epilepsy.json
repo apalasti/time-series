@@ -1,0 +1,18 @@
+{
+  "batch_size": 32,
+  "input_channels": 1,
+  "sequence_len": 178,
+  "patch_len": 24,
+  "patch_stride": 12,
+  "pretrain_optim": "AdamW",
+  "learning_rate": 0.0001273783071501038,
+  "weight_decay": 0.00001731739699294851,
+  "lr_scheduler": "lambda",
+  "pretrain_epochs": 30,
+  "contrastive_weight": 0.5,
+  "token_embedding_kernel_size": 3,
+  "dropout": 0.1,
+  "d_model": 1024,
+  "n_layers": 3,
+  "n_heads": 8
+}
