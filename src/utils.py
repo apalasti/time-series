@@ -1,3 +1,5 @@
+from typing import Union
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -5,6 +7,7 @@ import plotly.graph_objects as go
 import torch.nn.functional as F
 from einops import rearrange
 from plotly.subplots import make_subplots
+from sklearn.decomposition import PCA
 from torch import Tensor
 
 
@@ -49,6 +52,27 @@ def create_patches(
     if enable_channel_independence:
         return rearrange(x, "B C T_p P -> (B C) T_p P")
     return rearrange(x, "B C T_p P -> B T_p (C P)")
+
+
+def visualize_embeddings_2d(
+    embeddings: np.ndarray, labels: Union[np.ndarray, None] = None
+):
+    if labels is None:
+        labels = np.zeros(len(embeddings))
+    assert embeddings.shape[0] == labels.shape[0]
+
+    pca = PCA(n_components=2)
+    reduced_embeddings = pca.fit_transform(embeddings)
+    fig = px.scatter(
+        x=reduced_embeddings[:, 0],
+        y=reduced_embeddings[:, 1],
+        color=labels.astype(str),
+        labels={
+            "x": f"PC1 ({pca.explained_variance_ratio_[0]:.1%})",
+            "y": f"PC2 ({pca.explained_variance_ratio_[1]:.1%})",
+        },
+    )
+    return fig
 
 
 def plot_classification_dataset(series: np.ndarray, labels: np.ndarray):

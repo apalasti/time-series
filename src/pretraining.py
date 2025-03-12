@@ -1,12 +1,14 @@
-from typing import Tuple
+from typing import List, Tuple
 
 import lightning as L
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import Tensor
 
+import wandb
 from time_drl import TimeDRL
-from utils import create_patches
+from utils import create_patches, visualize_embeddings_2d
 
 
 class PretrainedTimeDRL(L.LightningModule):
@@ -88,6 +90,31 @@ class PretrainedTimeDRL(L.LightningModule):
         )
 
         return loss
+
+    def on_validation_start(self):
+        self.cls_embeddings: List[np.ndarray] = []
+        self.cls_labels: List[np.ndarray] = []
+
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        x_patched = self.create_patches(x)
+        cls, timestamps = self._get_representations(x_patched)
+        reconstruction_loss = F.mse_loss(
+            self.model.reconstructor(timestamps), x_patched
+        )
+
+        self.log("val_reconstruction_loss", reconstruction_loss, on_epoch=True)
+        self.cls_embeddings.append(cls.detach().cpu().numpy())
+        if y.ndim == 1:  # This means a classification dataset
+            self.cls_labels.append(y.detach().cpu().numpy())
+
+    def on_validation_end(self):
+        cls_embeddings = np.concatenate(self.cls_embeddings, axis=0)
+        fig = visualize_embeddings_2d(
+            cls_embeddings,
+            np.concatenate(self.cls_labels, axis=0) if self.cls_labels else None,
+        )
+        wandb.log({"[CLS] Embeddings": fig}, step=self.global_step)
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
