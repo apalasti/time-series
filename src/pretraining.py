@@ -4,11 +4,11 @@ import lightning as L
 import numpy as np
 import torch
 import torch.nn.functional as F
+import wandb
 from torch import Tensor
 
-import wandb
-from time_drl import TimeDRL
-from utils import create_patches, visualize_embeddings_2d
+from src.time_drl import TimeDRL
+from src.utils import create_patches, visualize_embeddings_2d
 
 
 class PretrainedTimeDRL(L.LightningModule):
@@ -146,49 +146,3 @@ class PretrainedTimeDRL(L.LightningModule):
                 else None
             ),
         }
-
-
-if __name__ == "__main__":
-    from pathlib import Path
-
-    from datasets import ClassificationDataset
-    from time_drl import TimeDRL
-
-    config = {
-        "batch_size": 32,
-        "input_channels": 1,
-        "sequence_len": 178,
-        "patch_len": 24,
-        "patch_stride": 12,
-        "pretrain_optim": "AdamW",
-        "learning_rate": 0.0001273783071501038,
-        # "lradj": "constant",
-        "weight_decay": 0.00001731739699294851,
-        "lr_scheduler": "lambda",
-        "pretrain_epochs": 30,
-        "contrastive_weight": 0.5,
-        # "linear_eval_optim": "AdamW",
-        # "linear_eval_learning_rate": 0.0014077439416541409,
-        # "linear_eval_lradj": "constant",
-        # "linear_eval_weight_decay": 0.00017514842046704846,
-        # "linear_eval_epochs": 30,
-        # "pos_embed_type": "learnable",
-        # "token_embed_type": "conv",
-        "token_embedding_kernel_size": 3,
-        "dropout": 0.1,
-        "d_model": 1024,
-        "n_layers": 3,
-        "n_heads": 8,
-    }
-
-    # Load dataset
-    DATASETS_DIR = Path(__file__).parent.parent / "datasets"
-    train_ds = ClassificationDataset(DATASETS_DIR / "classification/Epilepsy/train.pt")
-    dataloader = torch.utils.data.DataLoader(
-        train_ds, batch_size=config["batch_size"], shuffle=True
-    )
-
-    # Initialize pretraining module
-    pretrained_model = PretrainedTimeDRL(**config)
-    trainer = L.Trainer(max_epochs=config["pretrain_epochs"])
-    trainer.fit(pretrained_model, dataloader)
