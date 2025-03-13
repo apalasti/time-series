@@ -77,7 +77,7 @@ class PretrainedTimeDRL(L.LightningModule):
             + self.hparams.get("contrastive_weight", 1.0) * contrastive_loss
         )
 
-        self.log_dict({"lr": self.optimizers().param_groups[0]["lr"]}, on_epoch=True)
+        self.log_dict({"lr": self.optimizers().param_groups[0]["lr"]}, on_step=False)
         self.log_dict(
             {
                 "train/loss": loss,
