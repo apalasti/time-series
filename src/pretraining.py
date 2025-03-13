@@ -4,7 +4,7 @@ import lightning as L
 import numpy as np
 import torch
 import torch.nn.functional as F
-import wandb
+from lightning.pytorch.loggers import WandbLogger
 from torch import Tensor
 
 from src.time_drl import TimeDRL
@@ -14,7 +14,6 @@ from src.utils import create_patches, visualize_embeddings_2d
 class PretrainedTimeDRL(L.LightningModule):
     def __init__(self, **config):
         super().__init__()
-
         self.save_hyperparameters()
 
         self.create_patches = lambda x: create_patches(
@@ -81,9 +80,9 @@ class PretrainedTimeDRL(L.LightningModule):
         self.log_dict({"lr": self.optimizers().param_groups[0]["lr"]}, on_epoch=True)
         self.log_dict(
             {
-                "train_loss": loss,
-                "reconstruction_loss": reconstruction_loss,
-                "contrastive_loss": contrastive_loss,
+                "train/loss": loss,
+                "train/reconstruction_loss": reconstruction_loss,
+                "train/contrastive_loss": contrastive_loss,
             },
             prog_bar=True,
             on_step=True,
@@ -91,7 +90,7 @@ class PretrainedTimeDRL(L.LightningModule):
 
         return loss
 
-    def on_validation_start(self):
+    def on_validation_epoch_start(self):
         self.cls_embeddings: List[np.ndarray] = []
         self.cls_labels: List[np.ndarray] = []
 
@@ -103,18 +102,28 @@ class PretrainedTimeDRL(L.LightningModule):
             self.model.reconstructor(timestamps), x_patched
         )
 
-        self.log("val_reconstruction_loss", reconstruction_loss, on_epoch=True)
+        self.log("val/reconstruction_loss", reconstruction_loss, on_epoch=True)
         self.cls_embeddings.append(cls.detach().cpu().numpy())
         if y.ndim == 1:  # This means a classification dataset
             self.cls_labels.append(y.detach().cpu().numpy())
 
-    def on_validation_end(self):
+    def on_validation_epoch_end(self):
         cls_embeddings = np.concatenate(self.cls_embeddings, axis=0)
         fig = visualize_embeddings_2d(
             cls_embeddings,
             np.concatenate(self.cls_labels, axis=0) if self.cls_labels else None,
         )
-        wandb.log({"[CLS] Embeddings": fig}, step=self.global_step)
+        if isinstance(self.logger, WandbLogger):
+            logger: WandbLogger = self.logger
+            logger.log_metrics({"val/[CLS] Embeddings": fig})
+        else:
+            fig.show()
+
+    def predict_step(self, batch, batch_idx):
+        x, _ = batch
+        x_patched = self.create_patches(x)
+        cls_embeddings, timestamps = self._get_representations(x_patched)
+        return cls_embeddings, timestamps
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(

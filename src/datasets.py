@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 
 
 class ClassificationDataset(Dataset):
-    def __init__(self, dataset_path, transform=None, map_location=None, normalize=False) -> None:
+    def __init__(self, dataset_path, transform=None, map_location=None, normalize=True) -> None:
         super().__init__()
 
         self.transform = transform
@@ -22,7 +22,7 @@ class ClassificationDataset(Dataset):
         #   - T = Time steps (sequence length)
         #   - C = Channels/features per time step
         self.samples = self.dataset["samples"].float()
-        self.labels = self.dataset["labels"].float()
+        self.labels = self.dataset["labels"].long()
         assert self.samples.shape[0] == self.labels.shape[0], (
             f"Number of samples ({self.samples.shape[0]}) does not match number of labels "
             f"({self.labels.shape[0]}) in dataset {self.dataset_path}"
