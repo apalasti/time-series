@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
+from src.transformer import AttentionLayer, Encoder, EncoderLayer, FullAttention
+
 
 class TokenEmbedding(nn.Module):
     def __init__(self, input_channels: int, d_model: int, kernel_size=3):
@@ -50,25 +52,43 @@ class TimeDRL(nn.Module):
         self.token_embeddings = TokenEmbedding(
             self.input_channels, d_model, token_embedding_kernel_size
         )
-        self.positional_embeddings = nn.Parameter(
-            # +1 Positional Embedding for the [CLS] token
-            torch.randn(self.sequence_len + 1, d_model, dtype=torch.float),
-            requires_grad=True,
-        )
+        # self.positional_embeddings = nn.Parameter(
+        # # +1 Positional Embedding for the [CLS] token
+        # torch.randn(self.sequence_len + 1, d_model, dtype=torch.float),
+        # requires_grad=True,
+        # )
         self.dropout = nn.Dropout(p=dropout)
 
-        self.encoder = nn.TransformerEncoder(
-            encoder_layer=nn.TransformerEncoderLayer(
-                d_model=d_model,
-                nhead=n_heads,
-                batch_first=True,
-                dropout=dropout,
-                dim_feedforward=4*d_model,
-                activation="gelu",
-            ),
-            num_layers=n_layers,
-            norm=nn.LayerNorm(self.d_model),
-        )
+        # self.encoder = nn.TransformerEncoder(
+        # encoder_layer=nn.TransformerEncoderLayer(
+        # d_model=d_model,
+        # nhead=n_heads,
+        # batch_first=True,
+        # dropout=dropout,
+        # dim_feedforward=4 * d_model,
+        # activation="gelu",
+        # ),
+        # num_layers=n_layers,
+        # norm=nn.LayerNorm(self.d_model),
+        # )
+        self.encoder = Encoder(
+            [
+                EncoderLayer(
+                    AttentionLayer(
+                        FullAttention(
+                            mask_flag=False, factor=None,
+                            attention_dropout=dropout,
+                            output_attention=False,
+                        ),
+                        d_model, n_heads,
+                    ),
+                    d_model, d_ff=4 * d_model,
+                    dropout=dropout, activation="gelu",
+                )
+                for l in range(n_layers)
+            ],
+            norm_layer=torch.nn.LayerNorm(d_model),
+        ).float()
 
         self.reconstructor = nn.Sequential(
             nn.Dropout(dropout),
@@ -92,10 +112,9 @@ class TimeDRL(nn.Module):
 
         x = torch.cat([self.cls_token.expand(B, -1, -1), x], dim=1)  # Preprend [CLS]
         x = self.token_embeddings(x)  # Create token embeddings
-        x = x + self.positional_embeddings[None, : T + 1]  # Apply positional embeddings
+        # x = x + self.positional_embeddings[None, : T + 1]  # Apply positional embeddings
         x = self.dropout(x)
         assert x.shape == (B, T+1, self.d_model)
-
         x = self.encoder(x)
         return x
 
