@@ -1,8 +1,108 @@
+from typing import Union
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import torch.nn.functional as F
+from einops import rearrange
 from plotly.subplots import make_subplots
+from sklearn.decomposition import PCA
+from torch import Tensor
+
+
+def create_patches(
+    x: Tensor, 
+    patch_len: int, 
+    stride: int, 
+    enable_channel_independence: bool = True
+) -> Tensor:
+    """Create patches from input tensor.
+    
+    Args:
+        x: Input tensor of shape (B, T, C)
+        patch_len: Number of consecutive time steps to combine into a single patch
+        stride: Step size between consecutive patches
+        enable_channel_independence: If True, treats each channel independently by creating
+            separate patches for each channel. If False, combines channels within each patch
+            
+    Returns:
+        Patched tensor with shape:
+        - (B * C, num_patches, patch_len) if channel independence enabled
+        - (B, num_patches, C * patch_len) otherwise
+    """
+    assert stride <= patch_len, (
+        f"Patch length ({patch_len}) must be greater than or equal to stride ({stride}). "
+        "A patch length smaller than stride would result in skipped time steps and "
+        "incomplete coverage of the input sequence."
+    )
+
+    # Rearrange and pad input
+    x = rearrange(x, "B T C -> B C T")
+    # NOTE: The padding appends stride number of values to the sequence, I think
+    # this is wrong as there's no reason why if stride < patch_len the first
+    # values should be fewer times in the patches as the last ones.
+    x = F.pad(x, (0, stride), "replicate")
+
+    # Create patches using unfold
+    # Number of patches: (T + stride - patch_len) // stride + 1
+    x = x.unfold(dimension=-1, size=patch_len, step=stride)
+
+    # Rearrange based on channel independence setting
+    if enable_channel_independence:
+        return rearrange(x, "B C T_p P -> (B C) T_p P")
+    return rearrange(x, "B C T_p P -> B T_p (C P)")
+
+
+def visualize_embeddings_2d(
+    embeddings: np.ndarray, labels: Union[np.ndarray, None] = None
+):
+    if labels is None:
+        labels = np.zeros(len(embeddings))
+    assert embeddings.shape[0] == labels.shape[0]
+
+    pca = PCA(n_components=2)
+    reduced_embeddings = pca.fit_transform(embeddings)
+    fig = px.scatter(
+        x=reduced_embeddings[:, 0],
+        y=reduced_embeddings[:, 1],
+        color=labels.astype(str),
+        labels={
+            "x": f"PC1 ({pca.explained_variance_ratio_[0]:.1%})",
+            "y": f"PC2 ({pca.explained_variance_ratio_[1]:.1%})",
+        },
+    )
+    return fig
+
+
+def plot_patching_comparison(original, patched):
+    """Plot side-by-side comparison of original and patched time series.
+                
+    Args:
+        original: numpy array of shape (sequence_len, input_channels)
+        patched: numpy array of shape (patched_seq_len, patched_channels)
+    """
+    fig = make_subplots(
+        rows=2, cols=1,
+        subplot_titles=("Before Patching", "After Patching"),
+        shared_yaxes=True
+    )
+                
+    fig.add_trace(go.Heatmap(
+        z=original.T,
+        colorscale="Viridis",
+        colorbar=dict(title="Value")
+    ), row=1, col=1)
+    fig.add_trace(go.Heatmap(
+        z=patched.T,
+        colorscale="Viridis",
+        colorbar=dict(title="Value"),
+        text=patched.T,
+        texttemplate="%{text}",
+        textfont={"size": 8}
+    ), row=2, col=1)
+                
+    return fig
 
 
 def plot_classification_dataset(series: np.ndarray, labels: np.ndarray):

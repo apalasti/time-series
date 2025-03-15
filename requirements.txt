@@ -1,5 +1,10 @@
 requests==2.32.3
-plotly==6.0.0
+plotly==5.24.1
 numpy==2.0.2
 torch==2.6.0
 pandas==2.2.3
+einops==0.8.1
+lightning==2.5.0
+tensorboard==2.19.0
+scikit-learn==1.6.1
+wandb==0.19.8

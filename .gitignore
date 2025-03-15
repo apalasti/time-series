@@ -1,6 +1,10 @@
 # Datasets downloaded by the download_datasets.py script
 datasets/
 
+# Pytorch lightning logs
+lightning_logs/
+wandb/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
