@@ -1,3 +1,5 @@
+from typing import Dict
+
 import argparse
 import json
 from pathlib import Path
@@ -6,18 +8,19 @@ import lightning as L
 import torch
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
-from lightning.pytorch.loggers import WandbLogger
-from torch.utils.data import random_split
+# from lightning.pytorch.loggers import WandbLogger
+# from torch.utils.data import random_split
 
 from src.datasets import ClassificationDataset
 from src.pretraining import PretrainedTimeDRL
+
 
 DATASETS_DIR = Path(__file__).parent.parent / "datasets"
 CONFIGS_PATH = Path(__file__).parent.parent / "configs"
 MODELS_PATH = Path(__file__).parent.parent / "models"
 
 
-def get_config(dataset_name):
+def get_config(dataset_name) -> Dict:
     config_path = CONFIGS_PATH / f"{dataset_name}.json"
     try:
         with open(config_path, "r") as f:
@@ -29,7 +32,7 @@ def get_config(dataset_name):
     return dataset_config
 
 
-def get_data_loaders(dataset_name):
+def load_datasets(dataset_name):
     # Search for dataset folder
     dataset_path = next(
         (p for p in DATASETS_DIR.glob(f"**/{dataset_name}") if p.is_dir()), None
@@ -41,23 +44,24 @@ def get_data_loaders(dataset_name):
 
     if str(dataset_path.parent.name).lower() == "classification":
         train_ds = ClassificationDataset(dataset_path / "train.pt")
-        val_ds = (
-            ClassificationDataset(dataset_path / "train.pt")
-            if (dataset_path / "val.pt").exists()
-            else None
+
+        mean, std = train_ds.mean(), train_ds.std()
+        transform = lambda sample, label: (
+            ((sample - mean) / std).float(),
+            label.long(),
         )
-        test_ds = ClassificationDataset(dataset_path / "test.pt")
+
+        train_ds.transform = transform
+        val_ds = ClassificationDataset(dataset_path / "val.pt", transform=transform)
+        test_ds = ClassificationDataset(dataset_path / "test.pt", transform=transform)
     else:
         raise ValueError("Currently only classification datasets are supported.")
-
-    if val_ds is None:
-        # NOTE: For forecasting this will not pass
-        val_ds = random_split(train_ds, [0.8, 0.2])
 
     return train_ds, val_ds, test_ds
 
 
 def main():
+    L.seed_everything(seed=2023)
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dataset",
@@ -73,24 +77,25 @@ def main():
         + json.dumps(config, indent=4)
     )
 
-    train_ds, val_ds, _ = get_data_loaders(args.dataset)
-
+    train_ds, val_ds, _ = load_datasets(args.dataset)
     train_dl = torch.utils.data.DataLoader(
-        train_ds, batch_size=config["batch_size"], shuffle=True
+        train_ds, batch_size=config["batch_size"], shuffle=False
     )
     val_dl = torch.utils.data.DataLoader(
         val_ds, batch_size=config["batch_size"], shuffle=False
     )
 
     MODELS_PATH.mkdir(exist_ok=True)
+    config.update(**config.get("pretraining", {}))
 
     model = PretrainedTimeDRL(**config)
-    wandb_logger = WandbLogger(
-        name=f"{args.dataset}:Pretrained", project="TimeSeries", group=args.dataset
-    )
+    # wandb_logger = WandbLogger(
+        # name=f"{args.dataset}:Pretrained", project="TimeSeries", group=args.dataset
+    # )
     trainer = L.Trainer(
-        max_epochs=config["pretrain_epochs"],
-        logger=wandb_logger,
+        max_epochs=config["epochs"],
+        # logger=wandb_logger,
+        # accelerator="cpu",
         callbacks=[
             EarlyStopping("train/loss", patience=config["patience"]),
             ModelCheckpoint(
@@ -100,6 +105,8 @@ def main():
                 every_n_epochs=1,
             ),
         ],
+        log_every_n_steps=1,
+        num_sanity_val_steps=0
     )
     trainer.fit(model, train_dl, val_dl)
 
