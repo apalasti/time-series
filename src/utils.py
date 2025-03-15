@@ -42,7 +42,7 @@ def create_patches(
     # NOTE: The padding appends stride number of values to the sequence, I think
     # this is wrong as there's no reason why if stride < patch_len the first
     # values should be fewer times in the patches as the last ones.
-    x = F.pad(x, (0, stride), "reflect")
+    x = F.pad(x, (0, stride), "replicate")
 
     # Create patches using unfold
     # Number of patches: (T + stride - patch_len) // stride + 1
@@ -72,6 +72,36 @@ def visualize_embeddings_2d(
             "y": f"PC2 ({pca.explained_variance_ratio_[1]:.1%})",
         },
     )
+    return fig
+
+
+def plot_patching_comparison(original, patched):
+    """Plot side-by-side comparison of original and patched time series.
+                
+    Args:
+        original: numpy array of shape (sequence_len, input_channels)
+        patched: numpy array of shape (patched_seq_len, patched_channels)
+    """
+    fig = make_subplots(
+        rows=2, cols=1,
+        subplot_titles=("Before Patching", "After Patching"),
+        shared_yaxes=True
+    )
+                
+    fig.add_trace(go.Heatmap(
+        z=original.T,
+        colorscale="Viridis",
+        colorbar=dict(title="Value")
+    ), row=1, col=1)
+    fig.add_trace(go.Heatmap(
+        z=patched.T,
+        colorscale="Viridis",
+        colorbar=dict(title="Value"),
+        text=patched.T,
+        texttemplate="%{text}",
+        textfont={"size": 8}
+    ), row=2, col=1)
+                
     return fig
 
 

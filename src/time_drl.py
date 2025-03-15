@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from src.transformer import AttentionLayer, Encoder, EncoderLayer, FullAttention
-
 
 class TokenEmbedding(nn.Module):
     def __init__(self, input_channels: int, d_model: int, kernel_size=3):
@@ -59,36 +57,18 @@ class TimeDRL(nn.Module):
         # )
         self.dropout = nn.Dropout(p=dropout)
 
-        # self.encoder = nn.TransformerEncoder(
-        # encoder_layer=nn.TransformerEncoderLayer(
-        # d_model=d_model,
-        # nhead=n_heads,
-        # batch_first=True,
-        # dropout=dropout,
-        # dim_feedforward=4 * d_model,
-        # activation="gelu",
-        # ),
-        # num_layers=n_layers,
-        # norm=nn.LayerNorm(self.d_model),
-        # )
-        self.encoder = Encoder(
-            [
-                EncoderLayer(
-                    AttentionLayer(
-                        FullAttention(
-                            mask_flag=False, factor=None,
-                            attention_dropout=dropout,
-                            output_attention=False,
-                        ),
-                        d_model, n_heads,
-                    ),
-                    d_model, d_ff=4 * d_model,
-                    dropout=dropout, activation="gelu",
-                )
-                for l in range(n_layers)
-            ],
-            norm_layer=torch.nn.LayerNorm(d_model),
-        ).float()
+        self.encoder = nn.TransformerEncoder(
+            encoder_layer=nn.TransformerEncoderLayer(
+                d_model=d_model,
+                nhead=n_heads,
+                batch_first=True,
+                dropout=dropout,
+                dim_feedforward=4 * d_model,
+                activation="gelu",
+            ),
+            num_layers=n_layers,
+            norm=nn.LayerNorm(self.d_model),
+        )
 
         self.reconstructor = nn.Sequential(
             nn.Dropout(dropout),

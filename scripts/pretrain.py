@@ -95,7 +95,6 @@ def main():
     trainer = L.Trainer(
         max_epochs=config["epochs"],
         # logger=wandb_logger,
-        # accelerator="cpu",
         callbacks=[
             EarlyStopping("train/loss", patience=config["patience"]),
             ModelCheckpoint(
