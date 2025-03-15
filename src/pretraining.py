@@ -6,6 +6,7 @@ import torch
 import torch.nn.functional as F
 from lightning.pytorch.loggers import WandbLogger
 from torch import Tensor
+from torch.optim.lr_scheduler import LambdaLR
 
 from src.time_drl import TimeDRL
 from src.utils import create_patches, visualize_embeddings_2d
@@ -138,4 +139,27 @@ class PretrainedTimeDRL(L.LightningModule):
             weight_decay=self.hparams.weight_decay
         )
 
-        return { "optimizer": optimizer }
+        scheduler_type = self.hparams.get("lr_scheduler", "constant")
+        if scheduler_type == "lambda":
+            lr_scheduler = LambdaLR(
+                optimizer,
+                lr_lambda=lambda epoch: (
+                    1.0 if (epoch + 1) < 3 else (0.9 ** (((epoch + 1) - 3) // 1))
+                ),
+            )
+        elif scheduler_type == "constant":
+            lr_scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+        else:
+            raise ValueError(
+                f"Unknown lr_scheduler: {scheduler_type}. "
+                "Supported values are 'lambda' and 'constant'"
+            )
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": lr_scheduler,
+                "interval": "epoch",
+                "frequency": 1,
+            }
+        }
