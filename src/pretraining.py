@@ -28,7 +28,6 @@ class PretrainedTimeDRL(L.LightningModule):
             torch.randn((1, config["sequence_len"], config["input_channels"]))
         ).shape
 
-        # self.instance_norm = RevIN(num_features=0, affine=False)
         self.instance_norm = lambda x: F.instance_norm(
             torch.transpose(x, 1, 2)
         ).transpose(1, 2)
@@ -40,6 +39,7 @@ class PretrainedTimeDRL(L.LightningModule):
             n_layers=config["n_layers"],
             token_embedding_kernel_size=config["token_embedding_kernel_size"],
             dropout=config["dropout"],
+            pos_embed_type=config["pos_embed_type"],
         )
 
     def get_representations(self, x: Tensor) -> Tuple[Tensor, Tensor]:

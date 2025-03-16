@@ -1,0 +1,28 @@
+{
+    "task_type": "classification",
+    "batch_size": 32,
+    "input_channels": 3,
+    "sequence_len": 256,
+    "patch_len": 4,
+    "patch_stride": 4,
+    "pretraining": {
+        "learning_rate": 0.0001407743941654141,
+        "weight_decay": 0.00008709261322555189,
+        "lr_scheduler": "constant",
+        "contrastive_weight": 0.1,
+        "epochs": 30
+    },
+    "finetuning": {
+        "learning_rate": 0.0014077439416541409,
+        "lr_scheduler": "constant",
+        "weight_decay": 0.00017514842046704846,
+        "epochs": 30
+    },
+    "pos_embed_type": "learnable",
+    "token_embedding_kernel_size": 5,
+    "dropout": 0.2,
+    "d_model": 1408,
+    "n_layers": 8,
+    "n_heads": 11,
+    "patience": 10
+}

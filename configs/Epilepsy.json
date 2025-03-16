@@ -18,6 +18,7 @@
         "weight_decay": 0.0021575029207373205,
         "epochs": 30
     },
+    "pos_embed_type": "none",
     "token_embedding_kernel_size": 3,
     "dropout": 0.1,
     "d_model": 1024,

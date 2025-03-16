@@ -8,7 +8,7 @@ import lightning as L
 import torch
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
-# from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.loggers import WandbLogger
 # from torch.utils.data import random_split
 
 from src.datasets import ClassificationDataset
@@ -60,8 +60,7 @@ def load_datasets(dataset_name):
     return train_ds, val_ds, test_ds
 
 
-def main():
-    L.seed_everything(seed=2023)
+def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dataset",
@@ -69,8 +68,19 @@ def main():
         required=True,
         help="Name of the dataset to use (e.g., Epilepsy)",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--use_wandb",
+        action="store_true",
+        help="Enable Weights & Biases logging",
+    )
+    return parser.parse_args()
 
+
+def main():
+    L.seed_everything(seed=2023)
+    MODELS_PATH.mkdir(exist_ok=True)
+
+    args = parse_args()
     config = get_config(args.dataset)
     print(
         f"Loaded configuration for dataset '{args.dataset}':"
@@ -79,22 +89,24 @@ def main():
 
     train_ds, val_ds, _ = load_datasets(args.dataset)
     train_dl = torch.utils.data.DataLoader(
-        train_ds, batch_size=config["batch_size"], shuffle=False
+        train_ds, batch_size=config["batch_size"], shuffle=True,
+        # num_workers=2, pin_memory=True,
     )
     val_dl = torch.utils.data.DataLoader(
         val_ds, batch_size=config["batch_size"], shuffle=False
     )
 
-    MODELS_PATH.mkdir(exist_ok=True)
-    config.update(**config.get("pretraining", {}))
+    logger = None
+    if args.use_wandb:
+        logger = WandbLogger(
+            name=f"{args.dataset}:Pretrained", project="TimeSeries", group=args.dataset
+        )
 
+    config.update(**config.get("pretraining", {}))
     model = PretrainedTimeDRL(**config)
-    # wandb_logger = WandbLogger(
-        # name=f"{args.dataset}:Pretrained", project="TimeSeries", group=args.dataset
-    # )
     trainer = L.Trainer(
         max_epochs=config["epochs"],
-        # logger=wandb_logger,
+        logger=logger,
         callbacks=[
             EarlyStopping("train/loss", patience=config["patience"]),
             ModelCheckpoint(
@@ -104,8 +116,6 @@ def main():
                 every_n_epochs=1,
             ),
         ],
-        log_every_n_steps=1,
-        num_sanity_val_steps=0
     )
     trainer.fit(model, train_dl, val_dl)
 

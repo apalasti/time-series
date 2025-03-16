@@ -36,6 +36,7 @@ class TimeDRL(nn.Module):
         n_layers: int,
         token_embedding_kernel_size: int,
         dropout: float,
+        pos_embed_type = "learnable"
     ) -> None:
         super().__init__()
 
@@ -50,11 +51,15 @@ class TimeDRL(nn.Module):
         self.token_embeddings = TokenEmbedding(
             self.input_channels, d_model, token_embedding_kernel_size
         )
-        # self.positional_embeddings = nn.Parameter(
-        # # +1 Positional Embedding for the [CLS] token
-        # torch.randn(self.sequence_len + 1, d_model, dtype=torch.float),
-        # requires_grad=True,
-        # )
+
+        self.positional_embeddings = None
+        if pos_embed_type == "learnable":
+            self.positional_embeddings = nn.Parameter(
+                # +1 Positional Embedding for the [CLS] token
+                torch.randn(self.sequence_len + 1, d_model, dtype=torch.float),
+                requires_grad=True,
+            )
+
         self.dropout = nn.Dropout(p=dropout)
 
         self.encoder = nn.TransformerEncoder(
@@ -92,9 +97,13 @@ class TimeDRL(nn.Module):
 
         x = torch.cat([self.cls_token.expand(B, -1, -1), x], dim=1)  # Preprend [CLS]
         x = self.token_embeddings(x)  # Create token embeddings
-        # x = x + self.positional_embeddings[None, : T + 1]  # Apply positional embeddings
+
+        if self.positional_embeddings is not None:  # Apply positional embeddings
+            x = x + self.positional_embeddings[None, : T + 1]
+
         x = self.dropout(x)
         assert x.shape == (B, T+1, self.d_model)
+
         x = self.encoder(x)
         return x
 
