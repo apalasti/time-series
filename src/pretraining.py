@@ -9,7 +9,8 @@ from torch import Tensor
 from torch.optim.lr_scheduler import LambdaLR
 
 from src.time_drl import TimeDRL
-from src.utils import create_patches, visualize_embeddings_2d
+from src.utils import (cosine_similarity_matrix, create_patches,
+                       visualize_embeddings_2d, visualize_patch_reconstruction)
 
 
 class PretrainedTimeDRL(L.LightningModule):
@@ -84,17 +85,14 @@ class PretrainedTimeDRL(L.LightningModule):
 
         self.log_dict(
             {"lr": self.optimizers().param_groups[0]["lr"]},
-            on_step=False,
-            on_epoch=True,
+            on_step=False, on_epoch=True,
         )
         self.log_dict(
             {
                 "train/loss": loss,
                 "train/reconstruction_loss": reconstruction_loss,
                 "train/contrastive_loss": contrastive_loss,
-            },
-            prog_bar=True,
-            on_step=True,
+            }, prog_bar=True, on_step=True,
         )
 
         return loss
@@ -105,10 +103,16 @@ class PretrainedTimeDRL(L.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
+
         cls, timestamps = self.get_representations(x)
-        reconstruction_loss = F.mse_loss(
-            self.model.reconstructor(timestamps), self.create_patches(x)
-        )
+        reconstructions = self.model.reconstructor(timestamps)
+        reconstruction_loss = F.mse_loss(reconstructions, self.create_patches(x))
+
+        if batch_idx == 0:
+            reconstructions_np = reconstructions.detach().cpu().numpy()
+            patches_np = self.create_patches(x).detach().cpu().numpy()
+            fig = visualize_patch_reconstruction(patches_np[0], reconstructions_np[0])
+            self.__log_figure("val/Reconstruction Comparison", fig)
 
         self.log("val/reconstruction_loss", reconstruction_loss, on_epoch=True)
         self.cls_embeddings.append(cls.detach().cpu().numpy())
@@ -117,20 +121,30 @@ class PretrainedTimeDRL(L.LightningModule):
 
     def on_validation_epoch_end(self):
         cls_embeddings = np.concatenate(self.cls_embeddings, axis=0)
+
         fig = visualize_embeddings_2d(
             cls_embeddings,
             np.concatenate(self.cls_labels, axis=0) if self.cls_labels else None,
         )
-        if isinstance(self.logger, WandbLogger):
-            logger: WandbLogger = self.logger
-            logger.log_metrics({"val/[CLS] Embeddings": fig})
-        else:
-            fig.show()
+        self.__log_figure("val/[CLS] Embeddings", fig)
+
+        if self.cls_labels:
+            labels = np.concatenate(self.cls_labels, axis=0)
+            fig_confusion = cosine_similarity_matrix(cls_embeddings, labels)
+            self.__log_figure("val/Cosine Similarity Confusion Matrix", fig_confusion)
 
     def predict_step(self, batch, batch_idx):
         x, _ = batch
         cls_embeddings, timestamps = self.get_representations(x)
         return cls_embeddings, timestamps
+
+    def __log_figure(self, name, fig):
+        if isinstance(self.logger, WandbLogger):
+            logger: WandbLogger = self.logger
+            logger.log_metrics({name: fig})
+        else:
+            fig.update_layout(title=name)
+            fig.show()
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(

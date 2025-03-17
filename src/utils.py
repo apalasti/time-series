@@ -66,42 +66,78 @@ def visualize_embeddings_2d(
     fig = px.scatter(
         x=reduced_embeddings[:, 0],
         y=reduced_embeddings[:, 1],
-        color=labels.astype(str),
+        color=["Class " + str(label) for label in labels.astype(str)],
         labels={
             "x": f"PC1 ({pca.explained_variance_ratio_[0]:.1%})",
             "y": f"PC2 ({pca.explained_variance_ratio_[1]:.1%})",
         },
     )
+    fig.update_layout(
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
     return fig
 
 
-def plot_patching_comparison(original, patched):
-    """Plot side-by-side comparison of original and patched time series.
-                
-    Args:
-        original: numpy array of shape (sequence_len, input_channels)
-        patched: numpy array of shape (patched_seq_len, patched_channels)
-    """
+def visualize_patch_reconstruction(original: np.ndarray, reconstructed: np.ndarray):
+    """Compare original patched time series with reconstructed version."""
     fig = make_subplots(
         rows=2, cols=1,
-        subplot_titles=("Before Patching", "After Patching"),
-        shared_yaxes=True
+        subplot_titles=("Original Patches", "Reconstructed Patches"),
+        shared_xaxes=True, vertical_spacing=0.1,
     )
-                
+
     fig.add_trace(go.Heatmap(
         z=original.T,
         colorscale="Viridis",
-        colorbar=dict(title="Value")
+        text=original.T,
+        texttemplate="%{text:.2f}",
+        textfont={"size": 8},
+        colorbar=dict(len=0.40, y=0.77, yanchor="middle")
     ), row=1, col=1)
+
     fig.add_trace(go.Heatmap(
-        z=patched.T,
+        z=reconstructed.T,
         colorscale="Viridis",
-        colorbar=dict(title="Value"),
-        text=patched.T,
-        texttemplate="%{text}",
-        textfont={"size": 8}
+        text=reconstructed.T,
+        texttemplate="%{text:.2f}",
+        textfont={"size": 8},
+        colorbar=dict(len=0.40, y=0.22, yanchor="middle"),
     ), row=2, col=1)
-                
+
+    return fig
+
+
+def cosine_similarity_matrix(embeddings: np.ndarray, labels: np.ndarray):
+    """
+    Calculates and visualizes the cosine similarity matrix between class embeddings.
+    """
+    assert embeddings.shape[0] == labels.shape[0]
+    unique_labels = np.unique(labels)
+    num_classes = len(unique_labels)
+    similarity_matrix = np.zeros((num_classes, num_classes))
+
+    normalized_embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+    for i in range(len(unique_labels)):
+        embeddings_i = normalized_embeddings[labels == unique_labels[i]]
+        for j in range(i, len(unique_labels)):
+            embeddings_j = normalized_embeddings[labels == unique_labels[j]]
+            similarities = np.dot(embeddings_i, embeddings_j.T)
+            similarity_matrix[i, j] = similarity_matrix[j, i] = np.mean(similarities)
+
+    fig = go.Figure(data=go.Heatmap(
+        z=similarity_matrix,
+        x=[f"Class {l}" for l in unique_labels],
+        y=[f"Class {l}" for l in unique_labels],
+        colorscale="thermal", zmin=-1.0, zmax=1.0,
+        text=similarity_matrix,
+        texttemplate="%{text:.2f}",
+        textfont={"size": 10},
+    ))
+    fig.update_layout(
+        xaxis_title="Predicted Class",
+        yaxis_title="True Class",
+        yaxis=dict(autorange="reversed"),
+    )
     return fig
 
 
