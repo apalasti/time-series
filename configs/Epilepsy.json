@@ -5,6 +5,7 @@
     "sequence_len": 178,
     "patch_len": 24,
     "patch_stride": 12,
+    "enable_channel_independence": false,
     "pretraining": {
         "learning_rate": 0.0001273783071501038,
         "weight_decay": 0.00001731739699294851,
