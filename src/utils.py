@@ -86,8 +86,10 @@ def visualize_patch_reconstruction(original: np.ndarray, reconstructed: np.ndarr
         shared_xaxes=True, vertical_spacing=0.1,
     )
 
+    zmin = min(original.min(), reconstructed.min())
+    zmax = max(original.max(), reconstructed.max())
     fig.add_trace(go.Heatmap(
-        z=original.T,
+        z=original.T, zmin=zmin, zmax=zmax,
         colorscale="Viridis",
         text=original.T,
         texttemplate="%{text:.2f}",
@@ -96,7 +98,7 @@ def visualize_patch_reconstruction(original: np.ndarray, reconstructed: np.ndarr
     ), row=1, col=1)
 
     fig.add_trace(go.Heatmap(
-        z=reconstructed.T,
+        z=reconstructed.T, zmin=zmin, zmax=zmax,
         colorscale="Viridis",
         text=reconstructed.T,
         texttemplate="%{text:.2f}",
