@@ -22,7 +22,7 @@ class PretrainedTimeDRL(L.LightningModule):
             x,
             config["patch_len"],
             config["patch_stride"],
-            enable_channel_independence=False,
+            config["enable_channel_independence"],
         )
 
         _, patched_seq_len, patched_channels = self.create_patches(
@@ -53,8 +53,8 @@ class PretrainedTimeDRL(L.LightningModule):
         x, _ = batch
         B, T, C = x.shape
         assert (
-            B == self.hparams.batch_size and T == self.hparams.sequence_len and C == self.hparams.input_channels
-        ), f"Shape mismatch. Expected ({self.hparams.batch_size}, {self.hparams.sequence_len}, {self.hparams.input_channels}), got ({B}, {T}, {C})"
+            T == self.hparams.sequence_len and C == self.hparams.input_channels
+        ), f"Shape mismatch. Expected (N, {self.hparams.sequence_len}, {self.hparams.input_channels}), got (N, {T}, {C})"
 
         cls_a, timestamps_a = self.get_representations(x)
         cls_b, timestamps_b = self.get_representations(x)
@@ -163,6 +163,8 @@ class PretrainedTimeDRL(L.LightningModule):
             )
         elif scheduler_type == "constant":
             lr_scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+        elif scheduler_type == "exponential_decay":
+            lr_scheduler = LambdaLR(optimizer, lr_lambda=lambda epoch: 0.5 ** ((epoch - 1) // 1))
         else:
             raise ValueError(
                 f"Unknown lr_scheduler: {scheduler_type}. "
