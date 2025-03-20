@@ -4,9 +4,9 @@ import json
 import lightning as L
 import torch
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
-from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.loggers import WandbLogger
 
+from src.finetuning import ClassificationFineTune
 from src.pretraining import PretrainedTimeDRL
 
 from .utils import MODELS_PATH, get_config, load_datasets
@@ -39,38 +39,55 @@ def main():
         + json.dumps(config, indent=4)
     )
 
-    train_ds, val_ds, _ = load_datasets(args.dataset, config)
+    # Load pretrained model
+    checkpoint_path = MODELS_PATH / f"{args.dataset}_pretrained.ckpt"
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(
+            f"Pretrained model not found at {checkpoint_path}. Please run pretraining first."
+        )
+    pretrained = PretrainedTimeDRL.load_from_checkpoint(checkpoint_path)
+
+    # Load datasets
+    train_ds, val_ds, test_ds = load_datasets(args.dataset, config)
     train_dl = torch.utils.data.DataLoader(
-        train_ds, batch_size=config["batch_size"], shuffle=True,
-        # num_workers=2, pin_memory=True,
+        train_ds, batch_size=config["batch_size"], shuffle=True
     )
     val_dl = torch.utils.data.DataLoader(
         val_ds, batch_size=config["batch_size"], shuffle=False
     )
+    test_dl = torch.utils.data.DataLoader(
+        test_ds, batch_size=config["batch_size"], shuffle=False
+    )
 
+    # Setup logger
     logger = None
     if args.use_wandb:
         logger = WandbLogger(
-            name=f"{args.dataset}:Pretrained", project="TimeSeries", group=args.dataset
+            name=f"{args.dataset}:Finetuned", project="TimeSeries", group=args.dataset
         )
 
-    config.update(**config.get("pretraining", {}))
-    model = PretrainedTimeDRL(**config)
+    config.update(**config["finetuning"])
+    model = ClassificationFineTune(pretrained, **config)
     trainer = L.Trainer(
         max_epochs=config["epochs"],
         logger=logger,
         callbacks=[
-            EarlyStopping("train/loss", patience=config["patience"]),
+            EarlyStopping("val/acc", patience=config["patience"], mode="max"),
             ModelCheckpoint(
                 dirpath=MODELS_PATH,
-                filename=f"{args.dataset}_pretrained",
-                monitor="train/loss",
+                filename=f"{args.dataset}_finetuned",
+                monitor="val/acc", mode="max",
                 every_n_epochs=1,
             ),
         ],
         log_every_n_steps=10,
     )
     trainer.fit(model, train_dl, val_dl)
+
+    model = ClassificationFineTune.load_from_checkpoint(
+        MODELS_PATH / f"{args.dataset}_finetuned.ckpt", pretrained=pretrained
+    )
+    trainer.test(model, test_dl)
 
 
 if __name__ == "__main__":

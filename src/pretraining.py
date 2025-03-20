@@ -10,7 +10,8 @@ from torch.optim.lr_scheduler import LambdaLR
 
 from src.time_drl import TimeDRL
 from src.utils import (cosine_similarity_matrix, create_patches,
-                       visualize_embeddings_2d, visualize_patch_reconstruction)
+                       load_lr_scheduler, visualize_embeddings_2d,
+                       visualize_patch_reconstruction)
 
 
 class PretrainedTimeDRL(L.LightningModule):
@@ -133,10 +134,11 @@ class PretrainedTimeDRL(L.LightningModule):
             fig_confusion = cosine_similarity_matrix(cls_embeddings, labels)
             self.__log_figure("val/Cosine Similarity Confusion Matrix", fig_confusion)
 
-    def predict_step(self, batch, batch_idx):
-        x, _ = batch
-        cls_embeddings, timestamps = self.get_representations(x)
-        return cls_embeddings, timestamps
+    # NOTE: Not needed
+    # def predict_step(self, batch, batch_idx):
+    # x, _ = batch
+    # cls_embeddings, timestamps = self.get_representations(x)
+    # return cls_embeddings, timestamps
 
     def __log_figure(self, name, fig):
         if isinstance(self.logger, WandbLogger):
@@ -154,22 +156,7 @@ class PretrainedTimeDRL(L.LightningModule):
         )
 
         scheduler_type = self.hparams.get("lr_scheduler", "constant")
-        if scheduler_type == "lambda":
-            lr_scheduler = LambdaLR(
-                optimizer,
-                lr_lambda=lambda epoch: (
-                    1.0 if (epoch + 1) < 3 else (0.9 ** (((epoch + 1) - 3) // 1))
-                ),
-            )
-        elif scheduler_type == "constant":
-            lr_scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
-        elif scheduler_type == "exponential_decay":
-            lr_scheduler = LambdaLR(optimizer, lr_lambda=lambda epoch: 0.5 ** ((epoch - 1) // 1))
-        else:
-            raise ValueError(
-                f"Unknown lr_scheduler: {scheduler_type}. "
-                "Supported values are 'lambda' and 'constant'"
-            )
+        lr_scheduler = load_lr_scheduler(optimizer, scheduler_type)
 
         return {
             "optimizer": optimizer,

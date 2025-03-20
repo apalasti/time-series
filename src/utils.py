@@ -9,6 +9,8 @@ from einops import rearrange
 from plotly.subplots import make_subplots
 from sklearn.decomposition import PCA
 from torch import Tensor
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LambdaLR, SequentialLR
 
 
 def create_patches(
@@ -52,6 +54,31 @@ def create_patches(
     if enable_channel_independence:
         return rearrange(x, "B C T_p P -> (B C) T_p P")
     return rearrange(x, "B C T_p P -> B T_p (C P)")
+
+
+def load_lr_scheduler(optimizer: Optimizer, scheduler_type: str):
+    if scheduler_type == "lambda": # type 3
+        lr_scheduler = LambdaLR(
+            optimizer,
+            lr_lambda=lambda epoch: (
+                1.0 if (epoch + 1) < 3 else (0.9 ** (((epoch + 1) - 3) // 1))
+            ),
+        )
+    elif scheduler_type == "constant":
+        lr_scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+    elif scheduler_type == "exponential_decay": # type 1
+        lr_scheduler = LambdaLR(optimizer, lr_lambda=lambda epoch: 0.5 ** ((epoch - 1) // 1))
+    elif scheduler_type == "warmup":
+        lr_scheduler = LambdaLR(
+            optimizer,
+            lr_lambda=lambda epoch: (epoch + 1) / 5 if epoch < 5 else (0.9 ** ((epoch - 5) // 1))
+        )
+    else:
+        raise ValueError(
+            f"Unknown lr_scheduler: {scheduler_type}. "
+            "Supported values are 'exponential_decay', 'warmup', 'lambda' and 'constant'"
+        )
+    return lr_scheduler
 
 
 def visualize_embeddings_2d(

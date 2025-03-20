@@ -3,6 +3,7 @@
     "batch_size": 32,
     "input_channels": 3,
     "sequence_len": 256,
+    "num_classes": 6,
     "patch_len": 4,
     "patch_stride": 4,
     "enable_channel_independence": false,

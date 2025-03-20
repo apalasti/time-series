@@ -1,11 +1,10 @@
 from pathlib import Path
 from typing import Dict, Optional
 
-import torch
 import pandas as pd
+import torch
 from torch import Tensor
 from torch.utils.data import Dataset
-
 
 FORECASTING_SPLIT_CONFIG = {
     "ETTh1": {
