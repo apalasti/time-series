@@ -2,14 +2,13 @@ import argparse
 import json
 
 import lightning as L
-import torch
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
 
-from src.finetuning import ClassificationFineTune
+from src.finetuning import ClassificationFineTune, ForecastingFineTune
 from src.pretraining import PretrainedTimeDRL
 
-from .utils import MODELS_PATH, get_config, load_datasets
+from .utils import MODELS_PATH, get_config, create_data_loaders
 
 
 def parse_args():
@@ -33,7 +32,7 @@ def main():
     MODELS_PATH.mkdir(exist_ok=True)
 
     args = parse_args()
-    config = get_config(args.dataset)
+    config = get_config(args.dataset, "finetuning")
     print(
         f"Loaded configuration for dataset '{args.dataset}':"
         + json.dumps(config, indent=4)
@@ -47,36 +46,33 @@ def main():
         )
     pretrained = PretrainedTimeDRL.load_from_checkpoint(checkpoint_path)
 
-    # Load datasets
-    train_ds, val_ds, test_ds = load_datasets(args.dataset, config)
-    train_dl = torch.utils.data.DataLoader(
-        train_ds, batch_size=config["batch_size"], shuffle=True
-    )
-    val_dl = torch.utils.data.DataLoader(
-        val_ds, batch_size=config["batch_size"], shuffle=False
-    )
-    test_dl = torch.utils.data.DataLoader(
-        test_ds, batch_size=config["batch_size"], shuffle=False
-    )
+    train_dl, val_dl, test_dl = create_data_loaders(args.dataset, config)
 
-    # Setup logger
+    if config["task_type"] == "forecasting":
+        finetune_model_class = ForecastingFineTune
+    elif config["task_type"] == "classification":
+        finetune_model_class = ClassificationFineTune
+    else:
+        raise ValueError(
+            f"Unsupported task type: {config['task_type']}. Must be either 'forecasting' or 'classification'"
+        )
+
     logger = None
     if args.use_wandb:
         logger = WandbLogger(
             name=f"{args.dataset}:Finetuned", project="TimeSeries", group=args.dataset
         )
 
-    config.update(**config["finetuning"])
-    model = ClassificationFineTune(pretrained, **config)
+    model = finetune_model_class(pretrained, **config)
     trainer = L.Trainer(
         max_epochs=config["epochs"],
         logger=logger,
         callbacks=[
-            EarlyStopping("val/acc", patience=config["patience"], mode="max"),
+            EarlyStopping("val/loss", patience=config["patience"], mode="max"),
             ModelCheckpoint(
                 dirpath=MODELS_PATH,
                 filename=f"{args.dataset}_finetuned",
-                monitor="val/acc", mode="max",
+                monitor="val/loss", mode="max",
                 every_n_epochs=1,
             ),
         ],
@@ -84,7 +80,7 @@ def main():
     )
     trainer.fit(model, train_dl, val_dl)
 
-    model = ClassificationFineTune.load_from_checkpoint(
+    model = finetune_model_class.load_from_checkpoint(
         MODELS_PATH / f"{args.dataset}_finetuned.ckpt", pretrained=pretrained
     )
     trainer.test(model, test_dl)

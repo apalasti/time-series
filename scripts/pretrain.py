@@ -9,7 +9,7 @@ from lightning.pytorch.loggers import WandbLogger
 
 from src.pretraining import PretrainedTimeDRL
 
-from .utils import MODELS_PATH, get_config, load_datasets
+from .utils import MODELS_PATH, get_config, create_data_loaders
 
 
 def parse_args():
@@ -33,20 +33,13 @@ def main():
     MODELS_PATH.mkdir(exist_ok=True)
 
     args = parse_args()
-    config = get_config(args.dataset)
+    config = get_config(args.dataset, "pretraining")
     print(
         f"Loaded configuration for dataset '{args.dataset}':"
         + json.dumps(config, indent=4)
     )
 
-    train_ds, val_ds, _ = load_datasets(args.dataset, config)
-    train_dl = torch.utils.data.DataLoader(
-        train_ds, batch_size=config["batch_size"], shuffle=True,
-        # num_workers=2, pin_memory=True,
-    )
-    val_dl = torch.utils.data.DataLoader(
-        val_ds, batch_size=config["batch_size"], shuffle=False
-    )
+    train_dl, val_dl, _ = create_data_loaders(args.dataset, config)
 
     logger = None
     if args.use_wandb:
@@ -54,7 +47,6 @@ def main():
             name=f"{args.dataset}:Pretrained", project="TimeSeries", group=args.dataset
         )
 
-    config.update(**config.get("pretraining", {}))
     model = PretrainedTimeDRL(**config)
     trainer = L.Trainer(
         max_epochs=config["epochs"],
