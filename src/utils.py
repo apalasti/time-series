@@ -10,7 +10,50 @@ from plotly.subplots import make_subplots
 from sklearn.decomposition import PCA
 from torch import Tensor
 from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LambdaLR, SequentialLR
+from torch.optim.lr_scheduler import LambdaLR
+
+
+def visualize_predictions(past: np.ndarray, future: np.ndarray, preds: np.ndarray):
+    """Creates a multi-channel time series plot."""
+    num_channels = past.shape[-1]
+    fig = make_subplots(rows=num_channels, cols=1, shared_xaxes=True)
+
+    past_len = past.shape[0]
+    future_len = future.shape[0]
+    for channel_idx in range(num_channels):
+        fig.add_scatter(
+            x=np.arange(past_len),
+            y=past[:, channel_idx],
+            mode="lines",
+            line_color="blue",
+            name=f"Past (Channel {channel_idx})",
+            row=channel_idx + 1,
+            col=1,
+            showlegend=False,
+        )
+        fig.add_scatter(
+            x=np.arange(past_len, past_len + future_len),
+            y=future[:, channel_idx],
+            mode="lines",
+            line_color="blue",
+            name=f"Future (Channel {channel_idx})",
+            row=channel_idx + 1,
+            col=1,
+            showlegend=False,
+        )
+        fig.add_scatter(
+            x=np.arange(past_len, past_len + future_len),
+            y=preds[:, channel_idx],
+            mode="lines",
+            line_color="red",
+            line_dash="dash",
+            name=f"Predictions (Channel {channel_idx})",
+            row=channel_idx + 1,
+            col=1,
+            showlegend=False,
+        )
+
+    return fig
 
 
 def create_patches(

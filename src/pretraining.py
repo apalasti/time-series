@@ -1,8 +1,9 @@
-from typing import List, Tuple
+from typing import List, Tuple, Literal
 
 import lightning as L
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from lightning.pytorch.loggers import WandbLogger
 from torch import Tensor
@@ -30,9 +31,7 @@ class PretrainedTimeDRL(L.LightningModule):
             torch.randn((1, config["sequence_len"], config["input_channels"]))
         ).shape
 
-        self.instance_norm = lambda x: F.instance_norm(
-            torch.transpose(x, 1, 2)
-        ).transpose(1, 2)
+        self.instance_norm = InstanceNorm()
         self.model = TimeDRL(
             sequence_len=patched_seq_len,
             input_channels=patched_channels,
@@ -113,7 +112,7 @@ class PretrainedTimeDRL(L.LightningModule):
             reconstructions_np = reconstructions.detach().cpu().numpy()
             patches_np = self.create_patches(x).detach().cpu().numpy()
             fig = visualize_patch_reconstruction(patches_np[0], reconstructions_np[0])
-            self.__log_figure("val/Reconstruction Comparison", fig)
+            self._log_figure("val/Reconstruction Comparison", fig)
 
         self.log("val/reconstruction_loss", reconstruction_loss, on_epoch=True)
         self.cls_embeddings.append(cls.detach().cpu().numpy())
@@ -127,12 +126,12 @@ class PretrainedTimeDRL(L.LightningModule):
             cls_embeddings,
             np.concatenate(self.cls_labels, axis=0) if self.cls_labels else None,
         )
-        self.__log_figure("val/[CLS] Embeddings", fig)
+        self._log_figure("val/[CLS] Embeddings", fig)
 
         if self.cls_labels:
             labels = np.concatenate(self.cls_labels, axis=0)
             fig_confusion = cosine_similarity_matrix(cls_embeddings, labels)
-            self.__log_figure("val/Cosine Similarity Confusion Matrix", fig_confusion)
+            self._log_figure("val/Cosine Similarity Confusion Matrix", fig_confusion)
 
     # NOTE: Not needed
     # def predict_step(self, batch, batch_idx):
@@ -140,7 +139,7 @@ class PretrainedTimeDRL(L.LightningModule):
     # cls_embeddings, timestamps = self.get_representations(x)
     # return cls_embeddings, timestamps
 
-    def __log_figure(self, name, fig):
+    def _log_figure(self, name, fig):
         if isinstance(self.logger, WandbLogger):
             logger: WandbLogger = self.logger
             logger.log_metrics({name: fig})
@@ -166,3 +165,36 @@ class PretrainedTimeDRL(L.LightningModule):
                 "frequency": 1,
             }
         }
+
+
+class InstanceNorm(nn.Module):
+    def __init__(self, eps=1e-5):
+        super(InstanceNorm, self).__init__()
+        self.eps = eps
+
+    def forward(self, x, mode: Literal["norm", "denorm"] = "norm"):
+        if mode == "norm":
+            self._get_statistics(x)  # Set mean and std
+            x = self._normalize(x)
+        elif mode == "denorm":
+            x = self._denormalize(x)
+        else:
+            raise NotImplementedError
+        return x
+
+    def _get_statistics(self, x: Tensor):
+        dim2reduce = tuple(range(1, x.ndim - 1))
+        self.mean = torch.mean(x, dim=dim2reduce, keepdim=True).detach()
+        self.std = torch.sqrt(
+            torch.var(x, dim=dim2reduce, keepdim=True, unbiased=False) + self.eps
+        ).detach()
+
+    def _normalize(self, x):
+        x = x - self.mean
+        x = x / self.std
+        return x
+
+    def _denormalize(self, x):
+        x = x * self.std
+        x = x + self.mean
+        return x
