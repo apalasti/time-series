@@ -1,0 +1,30 @@
+{
+    "task_type": "classification",
+    "batch_size": 32,
+    "input_channels": 9,
+    "sequence_len": 128,
+    "num_classes": 6,
+    "patch_len": 8,
+    "patch_stride": 4,
+    "enable_channel_independence": false,
+    "pretraining": {
+        "learning_rate": 0.00015687380445185992,
+        "weight_decay": 0.004848209729531062,
+        "lr_scheduler": "warmup",
+        "contrastive_weight": 0.1,
+        "epochs": 30
+    },
+    "finetuning": {
+        "learning_rate": 0.018962218372579533,
+        "lr_scheduler": "lambda",
+        "weight_decay": 0.00006113802122278008,
+        "epochs": 30
+    },
+    "pos_embed_type": "fixed",
+    "token_embedding_kernel_size": 3,
+    "dropout": 0.2,
+    "d_model": 768,
+    "n_layers": 9,
+    "n_heads": 6,
+    "patience": 10
+}

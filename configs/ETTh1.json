@@ -19,7 +19,7 @@
         "weight_decay": 0.000016413821615923124,
         "epochs": 30
     },
-    "prediction_len": 96,
+    "prediction_len": 168,
     "pos_embed_type": "learnable",
     "token_embedding_kernel_size": 3,
     "dropout": 0.2,
