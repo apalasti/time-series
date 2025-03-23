@@ -13,6 +13,22 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
 
 
+def visualize_weights(weights: np.ndarray):
+    num_classes, num_weights = weights.shape
+    fig = px.bar(
+        x=[i % num_weights for i in range(num_classes * num_weights)],
+        y=weights.flatten(),
+        color=[f"Class {c}" for i in range(num_classes) for c in [i] * num_weights],
+        labels={
+            "x": "Time Step",
+            "y": "Mean Absolute Weight",
+            "color": "Class",
+        },
+    )
+    fig.update_traces(opacity=0.8, marker_line_width=1, marker_line_color="black")
+    return fig
+
+
 def visualize_predictions(past: np.ndarray, future: np.ndarray, preds: np.ndarray):
     """Creates a multi-channel time series plot."""
     num_channels = past.shape[-1]

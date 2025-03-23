@@ -4,102 +4,154 @@ import plotly.express as px
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from lightning.pytorch.loggers import WandbLogger
-from sklearn.metrics import (
-    confusion_matrix,
-    accuracy_score,
-    f1_score,
-    cohen_kappa_score,
-    mean_squared_error,
-    mean_absolute_error
-)
+from sklearn.metrics import (accuracy_score, cohen_kappa_score,
+                             confusion_matrix, f1_score, mean_absolute_error,
+                             mean_squared_error)
 
+from src.base import BaseModule
 from src.pretraining import PretrainedTimeDRL
-from src.utils import load_lr_scheduler, visualize_predictions
+from src.utils import visualize_predictions, visualize_weights
 
 
-class ClassificationFineTune(L.LightningModule):
+class ClassificationFineTune(BaseModule):
     def __init__(
         self,
         pretrained: PretrainedTimeDRL,
         **config
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["pretrained_model"])
+        self.save_hyperparameters(ignore=["pretrained"])
 
         self.pretrained = pretrained
-        self.classifier = nn.Linear(config["d_model"], config["num_classes"])
+        self._create_classifiers()
+
+    def _create_classifiers(self):
+        dummy = torch.randn(
+            (1, self.hparams["sequence_len"], self.hparams["input_channels"])
+        )
+        _, patched_seq_len, _ = self.pretrained.create_patches(dummy).shape
+
+        self.classifier = nn.Linear(
+            self.hparams["d_model"], self.hparams["num_classes"]
+        )
+        self.timestamp_classifier = nn.Sequential(
+            nn.Flatten(start_dim=1),
+            nn.Linear(
+                self.hparams["d_model"] * patched_seq_len, self.hparams["num_classes"]
+            ),
+        )
 
     def training_step(self, batch, batch_idx):
         x, y = batch
 
         self.pretrained.freeze()
         self.pretrained.eval()
-        cls_embeddings, _ = self.pretrained.get_representations(x)
-        logits = self.classifier(cls_embeddings)
+        cls_embeddings, timestamps = self.pretrained.get_representations(x)
 
-        loss = F.cross_entropy(logits, y)
+        cls_logits = self.classifier(cls_embeddings)
+        timestamp_logits = self.timestamp_classifier(timestamps)
 
-        self.log("train/loss", loss, prog_bar=True, on_step=True)
+        cls_loss = F.cross_entropy(cls_logits, y)
+        timestamp_loss = F.cross_entropy(timestamp_logits, y)
 
-        return loss
+        self.log_dict(
+            {"train/cls_loss": cls_loss, "train/timestamp_loss": timestamp_loss},
+            prog_bar=True, on_step=True,
+        )
+
+        return cls_loss + timestamp_loss
 
     def on_validation_epoch_start(self):
-        self.preds = []
-        self.labels = []
+        self.val_cls_preds = []
+        self.val_timestamp_preds = []
+        self.val_labels = []
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
 
-        cls_embeddings, _ = self.pretrained.get_representations(x)
-        logits = self.classifier(cls_embeddings)
+        cls_embeddings, timestamps = self.pretrained.get_representations(x)
+        cls_logits = self.classifier(cls_embeddings)
+        timestamp_logits = self.timestamp_classifier(timestamps)
 
-        loss = F.cross_entropy(logits, y)
-        preds = torch.argmax(logits, dim=1)
+        cls_loss = F.cross_entropy(cls_logits, y)
+        timestamp_loss = F.cross_entropy(timestamp_logits, y)
 
-        self.preds.append(preds.cpu().numpy())
-        self.labels.append(y.cpu().numpy())
+        cls_preds = torch.argmax(cls_logits, dim=1)
+        timestamp_preds = torch.argmax(timestamp_logits, dim=1)
 
-        self.log_dict({"val/loss": loss}, prog_bar=True, on_epoch=True)
+        self.val_cls_preds.append(cls_preds.cpu().numpy())
+        self.val_timestamp_preds.append(timestamp_preds.cpu().numpy())
+        self.val_labels.append(y.cpu().numpy())
+
+        self.log_dict(
+            {"val/loss": cls_loss, "val/cls_loss": cls_loss, "val/timestamp_loss": timestamp_loss},
+            prog_bar=True, on_epoch=True
+        )
 
     def on_validation_epoch_end(self):
-        preds = np.concatenate(self.preds)
-        labels = np.concatenate(self.labels)
+        cls_preds = np.concatenate(self.val_cls_preds)
+        timestamp_preds = np.concatenate(self.val_timestamp_preds)
+        labels = np.concatenate(self.val_labels)
 
-        self._log_classification_metrics(preds, labels, "val")
+        timestamp_weights: np.ndarray = (
+            self.timestamp_classifier[1].weight.detach().cpu().numpy()
+            .reshape((self.hparams["num_classes"], -1, self.hparams["d_model"]))
+            .mean(axis=-1)
+        )
+        fig = visualize_weights(timestamp_weights)
+        self._log_figure("val/Timestamp Classifier Weights", fig)
+        import pdb; pdb.set_trace()
 
-        del self.preds
-        del self.labels
+        self._log_classification_metrics(cls_preds, labels, "val", "cls")
+        self._log_classification_metrics(timestamp_preds, labels, "val", "timestamp")
+
+        del self.val_cls_preds
+        del self.val_timestamp_preds
+        del self.val_labels
 
     def on_test_epoch_start(self) -> None:
-        self.preds = []
-        self.labels = []
+        self.test_cls_preds = []
+        self.test_timestamp_preds = []
+        self.test_labels = []
 
     def test_step(self, batch, batch_idx):
         x, y = batch
 
-        cls_embeddings, _ = self.pretrained.get_representations(x)
-        logits = self.classifier(cls_embeddings)
-        preds = torch.argmax(logits, dim=1)
+        cls_embeddings, timestamps = self.pretrained.get_representations(x)
+        cls_logits = self.classifier(cls_embeddings)
+        timestamp_logits = self.timestamp_classifier(timestamps)
 
-        self.preds.append(preds.cpu().numpy())
-        self.labels.append(y.cpu().numpy())
+        cls_preds = torch.argmax(cls_logits, dim=1)
+        timestamp_preds = torch.argmax(timestamp_logits, dim=1)
+
+        self.test_cls_preds.append(cls_preds.cpu().numpy())
+        self.test_timestamp_preds.append(timestamp_preds.cpu().numpy())
+        self.test_labels.append(y.cpu().numpy())
 
     def on_test_epoch_end(self):
-        preds = np.concatenate(self.preds)
-        labels = np.concatenate(self.labels)
+        cls_preds = np.concatenate(self.test_cls_preds)
+        timestamp_preds = np.concatenate(self.test_timestamp_preds)
+        labels = np.concatenate(self.test_labels)
 
-        self._log_classification_metrics(preds, labels, "test")
+        self._log_classification_metrics(cls_preds, labels, "test", "cls")
+        self._log_classification_metrics(timestamp_preds, labels, "test", "timestamp")
 
-        del self.preds
-        del self.labels
+        del self.test_cls_preds
+        del self.test_timestamp_preds
+        del self.test_labels
 
-    def _log_classification_metrics(self, preds: np.ndarray, labels: np.ndarray, prefix: str):
-        self.log_dict({
-            f"{prefix}/acc": accuracy_score(labels, preds),
-            f"{prefix}/MF1": f1_score(labels, preds, average="macro"),
-            f"{prefix}/Kappa": cohen_kappa_score(labels, preds),
-        })
+    def _log_classification_metrics(
+        self, preds: np.ndarray, labels: np.ndarray, prefix: str, classifier_type: str
+    ):
+        self.log_dict(
+            {
+                f"{prefix}/{classifier_type}_acc": accuracy_score(labels, preds),
+                f"{prefix}/{classifier_type}_MF1": f1_score(
+                    labels, preds, average="macro"
+                ),
+                f"{prefix}/{classifier_type}_Kappa": cohen_kappa_score(labels, preds),
+            }
+        )
 
         cm = confusion_matrix(labels, preds)
         fig = px.imshow(
@@ -109,44 +161,17 @@ class ClassificationFineTune(L.LightningModule):
             y=[f"Class {i}" for i in range(cm.shape[1])],
             color_continuous_scale="Blues", text_auto=True,
         )
-        self.__log_figure(f"{prefix}/Confusion Matrix", fig)
-
-    def __log_figure(self, name, fig):
-        if isinstance(self.logger, WandbLogger):
-            logger: WandbLogger = self.logger
-            logger.log_metrics({name: fig})
-        else:
-            fig.update_layout(title=name)
-            fig.show()
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(
-            self.parameters(),
-            lr=self.hparams.learning_rate,
-            weight_decay=self.hparams.weight_decay,
-        )
-
-        scheduler_type = self.hparams.get("lr_scheduler", "constant")
-        lr_scheduler = load_lr_scheduler(optimizer, scheduler_type)
-
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": lr_scheduler,
-                "interval": "epoch",
-                "frequency": 1,
-            },
-        }
+        self._log_figure(f"{prefix}/{classifier_type}_Confusion Matrix", fig)
 
 
-class ForecastingFineTune(L.LightningModule):
+class ForecastingFineTune(BaseModule):
     def __init__(
         self,
         pretrained: PretrainedTimeDRL,
         **config
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["pretrained_model"])
+        self.save_hyperparameters(ignore=["pretrained"])
 
         self.pretrained = pretrained
         self.predictor = self._create_predictor()
@@ -238,30 +263,3 @@ class ForecastingFineTune(L.LightningModule):
             "test/mse": mean_squared_error(preds, targets),
             "test/mae": mean_absolute_error(preds, targets),
         })
-
-    def _log_figure(self, name, fig):
-        if isinstance(self.logger, WandbLogger):
-            logger: WandbLogger = self.logger
-            logger.log_metrics({name: fig})
-        else:
-            fig.update_layout(title=name)
-            fig.show()
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(
-            self.parameters(),
-            lr=self.hparams.learning_rate,
-            weight_decay=self.hparams.weight_decay,
-        )
-
-        scheduler_type = self.hparams.get("lr_scheduler", "constant")
-        lr_scheduler = load_lr_scheduler(optimizer, scheduler_type)
-
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": lr_scheduler,
-                "interval": "epoch",
-                "frequency": 1,
-            },
-        }
