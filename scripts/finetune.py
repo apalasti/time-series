@@ -8,7 +8,7 @@ from lightning.pytorch.loggers import WandbLogger
 from src.finetuning import ClassificationFineTune, ForecastingFineTune
 from src.pretraining import PretrainedTimeDRL
 
-from .utils import MODELS_PATH, get_config, create_data_loaders
+from .utils import MODELS_PATH, create_data_loaders, get_config
 
 
 def parse_args():

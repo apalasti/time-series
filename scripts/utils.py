@@ -72,7 +72,7 @@ def load_datasets(dataset_name: str, config: Dict):
         )
         test_ds = load_forecasting_dataset(
             dataset_path,
-            "validation",
+            "test",
             config["sequence_len"],
             config["prediction_len"],
             transform=transform,

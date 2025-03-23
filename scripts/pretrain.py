@@ -2,14 +2,13 @@ import argparse
 import json
 
 import lightning as L
-import torch
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.loggers import WandbLogger
 
 from src.pretraining import PretrainedTimeDRL
 
-from .utils import MODELS_PATH, get_config, create_data_loaders
+from .utils import MODELS_PATH, create_data_loaders, get_config
 
 
 def parse_args():
