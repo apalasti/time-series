@@ -7,42 +7,22 @@ from torch import Tensor
 from torch.utils.data import Dataset
 
 FORECASTING_SPLIT_CONFIG = {
-    "ETTh1": {
-        "train": (0, 12 * 30 * 24),
-        "validation": (12 * 30 * 24, 16 * 30 * 24),
-        "test": (16 * 30 * 24, 20 * 30 * 24),
-    },
-    "ETTh2": {
-        "train": (0, 12 * 30 * 24),
-        "validation": (12 * 30 * 24, 16 * 30 * 24),
-        "test": (16 * 30 * 24, 20 * 30 * 24),
-    },
-    "ETTm1": {
-        "train": (0, 12 * 30 * 24 * 4),
-        "validation": (12 * 30 * 24 * 4, 16 * 30 * 24 * 4),
-        "test": (16 * 30 * 24 * 4, 20 * 30 * 24 * 4),
-    },
-    "ETTm2": {
-        "train": (0, 12 * 30 * 24 * 4),
-        "validation": (12 * 30 * 24 * 4, 16 * 30 * 24 * 4),
-        "test": (16 * 30 * 24 * 4, 20 * 30 * 24 * 4),
-    },
-    "exchange_rate": {
-        "train": (0, 5311),
-        "validation": (5311, 6071),
-        "test": (6071, 7588)
-    },
-    "weather": {
-        "train": (0, 36_887),
-        "validation": (36_887, 42_157),
-        "test": (42_157, 52_696)
-    },
+    "ETTh1": [0, 12 * 30 * 24, 16 * 30 * 24, 20 * 30 * 24],
+    "ETTh2": [0, 12 * 30 * 24, 16 * 30 * 24, 20 * 30 * 24],
+    "ETTm1": [0, 12 * 30 * 24 * 4, 16 * 30 * 24 * 4, 20 * 30 * 24 * 4],
+    "ETTm2": [0, 12 * 30 * 24 * 4, 16 * 30 * 24 * 4, 20 * 30 * 24 * 4],
+    "exchange_rate": [0, 5311, 6071, 7588],
+    "weather": [0, 36_887, 42_157, 52_696],
 }
 
 
 def load_forecasting_dataset(dataset_path, split: str, sequence_len: int, prediction_len: int, transform=None):
     dataset_name = Path(dataset_path).stem
-    start, end = FORECASTING_SPLIT_CONFIG[dataset_name][split]
+
+    idx = {"train": 1, "validation": 2, "test": 3}[split]
+    start = max(0, FORECASTING_SPLIT_CONFIG[dataset_name][idx - 1] - sequence_len)
+    end = FORECASTING_SPLIT_CONFIG[dataset_name][idx]
+
     return ForecastingDataset(
         dataset_path, sequence_len, prediction_len, start, end, transform
     )
