@@ -49,7 +49,12 @@ def load_datasets(dataset_name: str, config: Dict):
         )
         train_ds.transform = transform
 
-        val_ds = ClassificationDataset(dataset_path / "val.pt", transform=transform)
+        val_path = dataset_path / "val.pt"
+        val_ds = (
+            ClassificationDataset(val_path, transform=transform)
+            if val_path.exists()
+            else ClassificationDataset(dataset_path / "test.pt", transform=transform)
+        )
         test_ds = ClassificationDataset(dataset_path / "test.pt", transform=transform)
     else:
         train_ds = load_forecasting_dataset(
