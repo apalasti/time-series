@@ -1,7 +1,7 @@
 from typing import List, Tuple
 
-import lightning as L
 import numpy as np
+import plotly.express as px
 import torch
 import torch.nn.functional as F
 from torch import Tensor
@@ -102,6 +102,16 @@ class PretrainedTimeDRL(BaseModule):
         reconstruction_loss = F.mse_loss(reconstructions, self.create_patches(x))
 
         if batch_idx == 0:
+            # Showing Timestamp embeddings
+            fig = px.imshow(
+                timestamps[0].cpu().T.detach().numpy(),
+                color_continuous_scale="Viridis",
+                labels=dict(x="Time", y="Features", color="Value"),
+                title="Timestamps"
+            )
+            self._log_figure("train/timestamp_heatmaps", fig)
+
+            # Reconstruction comparison
             reconstructions_np = reconstructions.detach().cpu().numpy()
             patches_np = self.create_patches(x).detach().cpu().numpy()
             fig = visualize_patch_reconstruction(patches_np[0], reconstructions_np[0])

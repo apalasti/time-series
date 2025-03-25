@@ -4,6 +4,28 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
+# def patch_attention(m):
+# forward_orig = m.forward
+
+# def wrap(*args, **kwargs):
+# kwargs['need_weights'] = True
+# kwargs['average_attn_weights'] = False
+
+# return forward_orig(*args, **kwargs)
+
+# m.forward = wrap
+
+
+# class SaveOutput:
+# def __init__(self):
+# self.outputs = []
+
+# def __call__(self, module, module_in, module_out):
+# self.outputs.append(module_out[1])
+
+# def clear(self):
+# self.outputs = []
+
 
 class TokenEmbedding(nn.Module):
     def __init__(self, input_channels: int, d_model: int, kernel_size=3):
@@ -80,11 +102,13 @@ class TimeDRL(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
 
+        # self.save_output = SaveOutput()
         self.encoder = nn.TransformerEncoder(
             encoder_layer=nn.TransformerEncoderLayer(
                 d_model=d_model,
                 nhead=n_heads,
                 batch_first=True,
+                norm_first=True,
                 dropout=dropout,
                 dim_feedforward=4 * d_model,
                 activation="gelu",
@@ -92,6 +116,10 @@ class TimeDRL(nn.Module):
             num_layers=n_layers,
             norm=nn.LayerNorm(self.d_model),
         )
+        # for module in self.encoder.modules():
+        # if isinstance(module, nn.MultiheadAttention):
+        # patch_attention(module)
+        # module.register_forward_hook(self.save_output)
 
         self.reconstructor = nn.Sequential(
             nn.Dropout(dropout),
@@ -106,6 +134,7 @@ class TimeDRL(nn.Module):
         )
 
     def forward(self, x: Tensor):
+        # self.save_output.clear()
         B, T, C = x.shape
         assert T == self.sequence_len and C == self.input_channels, (
             f"Input tensor shape {x.shape} does not match expected dimensions. "
