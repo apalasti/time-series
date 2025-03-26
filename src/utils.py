@@ -8,9 +8,23 @@ import torch.nn.functional as F
 from einops import rearrange
 from plotly.subplots import make_subplots
 from sklearn.decomposition import PCA
+from sklearn.metrics import confusion_matrix
 from torch import Tensor
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
+
+
+def plot_confusion_matrix(labels: np.ndarray, preds: np.ndarray):
+    """Generates and returns a confusion matrix plot."""
+    cm = confusion_matrix(labels, preds)
+    fig = px.imshow(
+        cm / cm.sum(axis=1, keepdims=True),
+        labels=dict(x="Predicted", y="Actual", color="Count"),
+        x=[f"Class {i}" for i in range(cm.shape[0])],
+        y=[f"Class {i}" for i in range(cm.shape[1])],
+        color_continuous_scale="Blues", text_auto=True,
+    )
+    return fig
 
 
 def visualize_weights(weights: np.ndarray):
@@ -202,7 +216,9 @@ def cosine_similarity_matrix(embeddings: np.ndarray, labels: np.ndarray):
     assert embeddings.shape[0] == labels.shape[0]
     unique_labels = np.unique(labels)
     num_classes = len(unique_labels)
-    similarity_matrix = np.zeros((num_classes, num_classes))
+
+    similarities_mean = np.zeros((num_classes, num_classes))
+    similarities_std = np.zeros((num_classes, num_classes))
 
     normalized_embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
     for i in range(len(unique_labels)):
@@ -210,15 +226,19 @@ def cosine_similarity_matrix(embeddings: np.ndarray, labels: np.ndarray):
         for j in range(i, len(unique_labels)):
             embeddings_j = normalized_embeddings[labels == unique_labels[j]]
             similarities = np.dot(embeddings_i, embeddings_j.T)
-            similarity_matrix[i, j] = similarity_matrix[j, i] = np.mean(similarities)
+            similarities_mean[i, j] = similarities_mean[j, i] = np.mean(similarities)
+            similarities_std[i, j] = similarities_std[j, i] = np.std(similarities)
 
+    text = [
+        [f"Mean: {m:.2f}<br>Std: {s:.2f}" for m, s in zip(row_m, row_s)]
+        for row_m, row_s in zip(similarities_mean, similarities_std)
+    ]
     fig = go.Figure(data=go.Heatmap(
-        z=similarity_matrix,
+        z=similarities_mean,
         x=[f"Class {l}" for l in unique_labels],
         y=[f"Class {l}" for l in unique_labels],
         colorscale="thermal", zmin=-1.0, zmax=1.0,
-        text=similarity_matrix,
-        texttemplate="%{text:.2f}",
+        text=text, texttemplate="%{text}",
         textfont={"size": 10},
     ))
     fig.update_layout(

@@ -4,12 +4,22 @@ import numpy as np
 import plotly.express as px
 import torch
 import torch.nn.functional as F
+from sklearn.decomposition import PCA
+from sklearn.metrics import accuracy_score
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from torch import Tensor
+from tqdm import tqdm
 
 from src.base import BaseModule, InstanceNorm
 from src.time_drl import TimeDRL
 from src.utils import (cosine_similarity_matrix, create_patches,
-                       visualize_embeddings_2d, visualize_patch_reconstruction)
+                       plot_confusion_matrix, visualize_embeddings_2d,
+                       visualize_patch_reconstruction)
+
+TOP_N_COMPONENTS = 15
+KNN_N_NEIGHBORS = 5
 
 
 class PretrainedTimeDRL(BaseModule):
@@ -102,14 +112,23 @@ class PretrainedTimeDRL(BaseModule):
         reconstruction_loss = F.mse_loss(reconstructions, self.create_patches(x))
 
         if batch_idx == 0:
-            # Showing Timestamp embeddings
-            fig = px.imshow(
-                timestamps[0].cpu().T.detach().numpy(),
-                color_continuous_scale="Viridis",
-                labels=dict(x="Time", y="Features", color="Value"),
-                title="Timestamps"
+            # Showing Timestamp embeddings
+            pca = PCA(n_components=min(TOP_N_COMPONENTS, *timestamps.shape[1:]))
+            timestamp_components = pca.fit_transform(
+                timestamps[0].cpu().detach().numpy()
             )
-            self._log_figure("train/timestamp_heatmaps", fig)
+
+            fig = px.imshow(
+                np.transpose(timestamp_components),
+                color_continuous_scale="Viridis",
+                labels=dict(x="Time", y="Principal Components", color="Value"),
+                title="Timestamps",
+                y=[
+                    f"PC{i+1:02d} ({var:.1%})"
+                    for i, var in enumerate(pca.explained_variance_ratio_)
+                ],
+            )
+            self._log_figure("val/timestamp_heatmaps", fig)
 
             # Reconstruction comparison
             reconstructions_np = reconstructions.detach().cpu().numpy()
@@ -136,8 +155,45 @@ class PretrainedTimeDRL(BaseModule):
             fig_confusion = cosine_similarity_matrix(cls_embeddings, labels)
             self._log_figure("val/Cosine Similarity Confusion Matrix", fig_confusion)
 
-    # NOTE: Not needed
-    # def predict_step(self, batch, batch_idx):
-    # x, _ = batch
-    # cls_embeddings, timestamps = self.get_representations(x)
-    # return cls_embeddings, timestamps
+        if self.cls_labels and self.trainer.train_dataloader:
+            # Perform kNN classification
+            labels = np.concatenate(self.cls_labels, axis=0)
+            train_cls_embeddings, _, train_labels = (
+                self.get_representations_from_dataloader(self.trainer.train_dataloader)
+            )
+            pipeline = Pipeline([
+                ("scaler", StandardScaler()),
+                ("knn", KNeighborsClassifier(n_neighbors=KNN_N_NEIGHBORS, n_jobs=-1)),
+            ])
+            pipeline.fit(train_cls_embeddings, train_labels)
+            preds = pipeline.predict(cls_embeddings)
+
+            fig = plot_confusion_matrix(labels, preds)
+            self._log_figure(f"val/kNN Confusion Matrix", fig)
+            self.log("val/knn_accuracy", accuracy_score(labels, preds), on_epoch=True)
+
+    def get_representations_from_dataloader(
+        self, dataloader: torch.utils.data.DataLoader
+    ):
+        self.eval()
+        cls_embeddings = []
+        timestamp_embeddings = []
+        labels = []
+
+        with torch.no_grad():
+            with tqdm(
+                dataloader, total=len(dataloader), desc="Processing batches", unit="batch", leave=False
+            ) as pbar:
+                for batch in pbar:
+                    x, y = batch
+                    x = x.to(self.device)  # Ensure data is on the correct device
+                    cls, timestamps = self.get_representations(x)
+                    cls_embeddings.append(cls.cpu().numpy())
+                    timestamp_embeddings.append(timestamps.cpu().numpy())
+                    labels.append(y.cpu().numpy())
+
+        return (
+            np.concatenate(cls_embeddings, axis=0), 
+            np.concatenate(timestamp_embeddings, axis=0),
+            np.concatenate(labels, axis=0)
+        )
