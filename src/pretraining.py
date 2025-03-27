@@ -1,10 +1,8 @@
 from typing import List, Tuple
 
 import numpy as np
-import plotly.express as px
 import torch
 import torch.nn.functional as F
-from sklearn.decomposition import PCA
 from sklearn.metrics import accuracy_score
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
@@ -15,8 +13,8 @@ from tqdm import tqdm
 from src.base import BaseModule, InstanceNorm
 from src.time_drl import TimeDRL
 from src.utils import (cosine_similarity_matrix, create_patches,
-                       plot_confusion_matrix, visualize_embeddings_2d,
-                       visualize_patch_reconstruction)
+                       plot_confusion_matrix, visualize_cls_embeddings_2d,
+                       visualize_patch_reconstruction, visualize_pca_components)
 
 TOP_N_COMPONENTS = 15
 KNN_N_NEIGHBORS = 5
@@ -112,25 +110,13 @@ class PretrainedTimeDRL(BaseModule):
         reconstruction_loss = F.mse_loss(reconstructions, self.create_patches(x))
 
         if batch_idx == 0:
-            # Showing Timestamp embeddings
-            pca = PCA(n_components=min(TOP_N_COMPONENTS, *timestamps.shape[1:]))
-            timestamp_components = pca.fit_transform(
-                timestamps[0].cpu().detach().numpy()
+            fig = visualize_pca_components(
+                x[0].detach().cpu().numpy(),
+                timestamps[0].detach().cpu().numpy(),
+                n_components=TOP_N_COMPONENTS,
             )
+            self._log_figure("val/Timestep PCA Components", fig)
 
-            fig = px.imshow(
-                np.transpose(timestamp_components),
-                color_continuous_scale="Viridis",
-                labels=dict(x="Time", y="Principal Components", color="Value"),
-                title="Timestamps",
-                y=[
-                    f"PC{i+1:02d} ({var:.1%})"
-                    for i, var in enumerate(pca.explained_variance_ratio_)
-                ],
-            )
-            self._log_figure("val/timestamp_heatmaps", fig)
-
-            # Reconstruction comparison
             reconstructions_np = reconstructions.detach().cpu().numpy()
             patches_np = self.create_patches(x).detach().cpu().numpy()
             fig = visualize_patch_reconstruction(patches_np[0], reconstructions_np[0])
@@ -144,7 +130,7 @@ class PretrainedTimeDRL(BaseModule):
     def on_validation_epoch_end(self):
         cls_embeddings = np.concatenate(self.cls_embeddings, axis=0)
 
-        fig = visualize_embeddings_2d(
+        fig = visualize_cls_embeddings_2d(
             cls_embeddings,
             np.concatenate(self.cls_labels, axis=0) if self.cls_labels else None,
         )

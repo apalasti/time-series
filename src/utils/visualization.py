@@ -4,14 +4,44 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import torch.nn.functional as F
-from einops import rearrange
 from plotly.subplots import make_subplots
 from sklearn.decomposition import PCA
 from sklearn.metrics import confusion_matrix
-from torch import Tensor
-from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LambdaLR
+
+
+def visualize_pca_components(
+    time_series_data: np.ndarray,
+    timestamp_embeddings: np.ndarray,
+    n_components: int = 15,
+):
+    pca = PCA(n_components=min(n_components, *timestamp_embeddings.shape))
+    timestamp_components = pca.fit_transform(timestamp_embeddings)
+
+    fig_timeseries = px.line(
+        time_series_data,
+        labels=dict(index="Time Step", value="Value", variable="Channel"),
+    )
+
+    fig_heatmap = px.imshow(
+        np.transpose(timestamp_components),
+        labels=dict(x="Time", y="Principal Components", color="Value"),
+        y=[
+            f"PC{i+1:02d} ({var:.1%})"
+            for i, var in enumerate(pca.explained_variance_ratio_)
+        ],
+    )
+
+    fig = make_subplots(
+        subplot_titles=("Input Time Series - All Channels", "Timestamp PCA Components"),
+        rows=2, cols=1,
+    )
+
+    fig.add_traces(fig_timeseries.data, rows=1, cols=1)
+    fig.add_traces(fig_heatmap.data, rows=2, cols=1)
+    fig.update_yaxes(autorange="reversed", row=2, col=1)
+    fig.update_layout(coloraxis_colorscale='Viridis', showlegend=False)
+
+    return fig
 
 
 def plot_confusion_matrix(labels: np.ndarray, preds: np.ndarray):
@@ -86,75 +116,7 @@ def visualize_predictions(past: np.ndarray, future: np.ndarray, preds: np.ndarra
     return fig
 
 
-def create_patches(
-    x: Tensor, 
-    patch_len: int, 
-    stride: int, 
-    enable_channel_independence: bool = True
-) -> Tensor:
-    """Create patches from input tensor.
-    
-    Args:
-        x: Input tensor of shape (B, T, C)
-        patch_len: Number of consecutive time steps to combine into a single patch
-        stride: Step size between consecutive patches
-        enable_channel_independence: If True, treats each channel independently by creating
-            separate patches for each channel. If False, combines channels within each patch
-            
-    Returns:
-        Patched tensor with shape:
-        - (B * C, num_patches, patch_len) if channel independence enabled
-        - (B, num_patches, C * patch_len) otherwise
-    """
-    assert stride <= patch_len, (
-        f"Patch length ({patch_len}) must be greater than or equal to stride ({stride}). "
-        "A patch length smaller than stride would result in skipped time steps and "
-        "incomplete coverage of the input sequence."
-    )
-
-    # Rearrange and pad input
-    x = rearrange(x, "B T C -> B C T")
-    # NOTE: The padding appends stride number of values to the sequence, I think
-    # this is wrong as there's no reason why if stride < patch_len the first
-    # values should be fewer times in the patches as the last ones.
-    x = F.pad(x, (0, stride), "replicate")
-
-    # Create patches using unfold
-    # Number of patches: (T + stride - patch_len) // stride + 1
-    x = x.unfold(dimension=-1, size=patch_len, step=stride)
-
-    # Rearrange based on channel independence setting
-    if enable_channel_independence:
-        return rearrange(x, "B C T_p P -> (B C) T_p P")
-    return rearrange(x, "B C T_p P -> B T_p (C P)")
-
-
-def load_lr_scheduler(optimizer: Optimizer, scheduler_type: str):
-    if scheduler_type == "lambda": # type 3
-        lr_scheduler = LambdaLR(
-            optimizer,
-            lr_lambda=lambda epoch: (
-                1.0 if (epoch + 1) < 3 else (0.9 ** (((epoch + 1) - 3) // 1))
-            ),
-        )
-    elif scheduler_type == "constant":
-        lr_scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
-    elif scheduler_type == "exponential_decay": # type 1
-        lr_scheduler = LambdaLR(optimizer, lr_lambda=lambda epoch: 0.5 ** ((epoch - 1) // 1))
-    elif scheduler_type == "warmup":
-        lr_scheduler = LambdaLR(
-            optimizer,
-            lr_lambda=lambda epoch: (epoch + 1) / 5 if epoch < 5 else (0.9 ** ((epoch - 5) // 1))
-        )
-    else:
-        raise ValueError(
-            f"Unknown lr_scheduler: {scheduler_type}. "
-            "Supported values are 'exponential_decay', 'warmup', 'lambda' and 'constant'"
-        )
-    return lr_scheduler
-
-
-def visualize_embeddings_2d(
+def visualize_cls_embeddings_2d(
     embeddings: np.ndarray, labels: Union[np.ndarray, None] = None
 ):
     if labels is None:
@@ -255,8 +217,7 @@ def plot_classification_dataset(series: np.ndarray, labels: np.ndarray):
     series = np.reshape(series, (num_samples * ts_len, num_vars))
 
     fig = make_subplots(
-        rows=num_vars,
-        cols=1,
+        rows=num_vars, cols=1,
         shared_xaxes=True,
         vertical_spacing=0.03,
         figure=go.Figure(
@@ -275,11 +236,8 @@ def plot_classification_dataset(series: np.ndarray, labels: np.ndarray):
         name = f"Var {i}"
         fig.add_trace(
             go.Scatter(
-                x=np.arange(series.shape[0]),
-                y=series[:, i],
-                mode="lines",
-                name=name,
-                showlegend=False,
+                x=np.arange(series.shape[0]), y=series[:, i],
+                mode="lines", name=name, showlegend=False,
             ),
             row=i + 1,
             col=1,
@@ -298,24 +256,16 @@ def plot_classification_dataset(series: np.ndarray, labels: np.ndarray):
         if name not in legend_entries:
             fig.add_trace(
                 go.Scatter(
-                    x=[None],
-                    y=[None],
-                    mode="markers",
-                    marker=dict(color=color),
-                    name=name,
+                    x=[None], y=[None], mode="markers",
+                    marker=dict(color=color), name=name,
                     showlegend=True,
                 )
             )
             legend_entries.add(name)
 
         fig.add_vrect(
-            x0=start,
-            x1=end,
-            name=name,
-            fillcolor=color,
-            opacity=0.4,
-            layer="below",
-            line_width=0,
+            x0=start, x1=end, name=name, fillcolor=color,
+            opacity=0.4, layer="below", line_width=0,
             showlegend=False,
         )
         if 0 < j:
@@ -340,8 +290,3 @@ def plot_ts(df: pd.DataFrame):
         showlegend=False,
         margin=dict(l=15, r=15, t=30, b=30)
     )
-
-
-def imbalance_ratio(labels: np.ndarray) -> float:
-    _, class_counts = np.unique(labels, return_counts=True)
-    return float(class_counts.max() / class_counts.min())
