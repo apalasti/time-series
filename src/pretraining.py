@@ -1,18 +1,26 @@
 from typing import List, Tuple
 
-import lightning as L
 import numpy as np
 import torch
 import torch.nn.functional as F
-from lightning.pytorch.loggers import WandbLogger
+from sklearn.metrics import accuracy_score
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from torch import Tensor
-from torch.optim.lr_scheduler import LambdaLR
+from tqdm import tqdm
 
+from src.base import BaseModule, InstanceNorm
 from src.time_drl import TimeDRL
-from src.utils import create_patches, visualize_embeddings_2d
+from src.utils import (cosine_similarity_matrix, create_patches,
+                       plot_confusion_matrix, visualize_cls_embeddings_2d,
+                       visualize_patch_reconstruction, visualize_pca_components)
+
+TOP_N_COMPONENTS = 15
+KNN_N_NEIGHBORS = 5
 
 
-class PretrainedTimeDRL(L.LightningModule):
+class PretrainedTimeDRL(BaseModule):
     def __init__(self, **config):
         super().__init__()
         self.save_hyperparameters()
@@ -21,17 +29,14 @@ class PretrainedTimeDRL(L.LightningModule):
             x,
             config["patch_len"],
             config["patch_stride"],
-            enable_channel_independence=False,
+            config["enable_channel_independence"],
         )
 
         _, patched_seq_len, patched_channels = self.create_patches(
             torch.randn((1, config["sequence_len"], config["input_channels"]))
         ).shape
 
-        # self.instance_norm = RevIN(num_features=0, affine=False)
-        self.instance_norm = lambda x: F.instance_norm(
-            torch.transpose(x, 1, 2)
-        ).transpose(1, 2)
+        self.instance_norm = InstanceNorm()
         self.model = TimeDRL(
             sequence_len=patched_seq_len,
             input_channels=patched_channels,
@@ -40,6 +45,7 @@ class PretrainedTimeDRL(L.LightningModule):
             n_layers=config["n_layers"],
             token_embedding_kernel_size=config["token_embedding_kernel_size"],
             dropout=config["dropout"],
+            pos_embed_type=config["pos_embed_type"],
         )
 
     def get_representations(self, x: Tensor) -> Tuple[Tensor, Tensor]:
@@ -52,8 +58,8 @@ class PretrainedTimeDRL(L.LightningModule):
         x, _ = batch
         B, T, C = x.shape
         assert (
-            B == self.hparams.batch_size and T == self.hparams.sequence_len and C == self.hparams.input_channels
-        ), f"Shape mismatch. Expected ({self.hparams.batch_size}, {self.hparams.sequence_len}, {self.hparams.input_channels}), got ({B}, {T}, {C})"
+            T == self.hparams.sequence_len and C == self.hparams.input_channels
+        ), f"Shape mismatch. Expected (N, {self.hparams.sequence_len}, {self.hparams.input_channels}), got (N, {T}, {C})"
 
         cls_a, timestamps_a = self.get_representations(x)
         cls_b, timestamps_b = self.get_representations(x)
@@ -83,18 +89,11 @@ class PretrainedTimeDRL(L.LightningModule):
         )
 
         self.log_dict(
-            {"lr": self.optimizers().param_groups[0]["lr"]},
-            on_step=False,
-            on_epoch=True,
-        )
-        self.log_dict(
             {
                 "train/loss": loss,
                 "train/reconstruction_loss": reconstruction_loss,
                 "train/contrastive_loss": contrastive_loss,
-            },
-            prog_bar=True,
-            on_step=True,
+            }, prog_bar=True, on_step=True,
         )
 
         return loss
@@ -105,10 +104,23 @@ class PretrainedTimeDRL(L.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
+
         cls, timestamps = self.get_representations(x)
-        reconstruction_loss = F.mse_loss(
-            self.model.reconstructor(timestamps), self.create_patches(x)
-        )
+        reconstructions = self.model.reconstructor(timestamps)
+        reconstruction_loss = F.mse_loss(reconstructions, self.create_patches(x))
+
+        if batch_idx == 0:
+            fig = visualize_pca_components(
+                x[0].detach().cpu().numpy(),
+                timestamps[0].detach().cpu().numpy(),
+                n_components=TOP_N_COMPONENTS,
+            )
+            self._log_figure("val/Timestep PCA Components", fig)
+
+            reconstructions_np = reconstructions.detach().cpu().numpy()
+            patches_np = self.create_patches(x).detach().cpu().numpy()
+            fig = visualize_patch_reconstruction(patches_np[0], reconstructions_np[0])
+            self._log_figure("val/Reconstruction Comparison", fig)
 
         self.log("val/reconstruction_loss", reconstruction_loss, on_epoch=True)
         self.cls_embeddings.append(cls.detach().cpu().numpy())
@@ -117,49 +129,57 @@ class PretrainedTimeDRL(L.LightningModule):
 
     def on_validation_epoch_end(self):
         cls_embeddings = np.concatenate(self.cls_embeddings, axis=0)
-        fig = visualize_embeddings_2d(
+
+        fig = visualize_cls_embeddings_2d(
             cls_embeddings,
             np.concatenate(self.cls_labels, axis=0) if self.cls_labels else None,
         )
-        if isinstance(self.logger, WandbLogger):
-            logger: WandbLogger = self.logger
-            logger.log_metrics({"val/[CLS] Embeddings": fig})
-        else:
-            fig.show()
+        self._log_figure("val/[CLS] Embeddings", fig)
 
-    def predict_step(self, batch, batch_idx):
-        x, _ = batch
-        cls_embeddings, timestamps = self.get_representations(x)
-        return cls_embeddings, timestamps
+        if self.cls_labels:
+            labels = np.concatenate(self.cls_labels, axis=0)
+            fig_confusion = cosine_similarity_matrix(cls_embeddings, labels)
+            self._log_figure("val/Cosine Similarity Confusion Matrix", fig_confusion)
 
-    def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(
-            self.parameters(),
-            lr=self.hparams.learning_rate,
-            weight_decay=self.hparams.weight_decay
+        if self.cls_labels and self.trainer.train_dataloader:
+            # Perform kNN classification
+            labels = np.concatenate(self.cls_labels, axis=0)
+            train_cls_embeddings, _, train_labels = (
+                self.get_representations_from_dataloader(self.trainer.train_dataloader)
+            )
+            pipeline = Pipeline([
+                ("scaler", StandardScaler()),
+                ("knn", KNeighborsClassifier(n_neighbors=KNN_N_NEIGHBORS, n_jobs=-1)),
+            ])
+            pipeline.fit(train_cls_embeddings, train_labels)
+            preds = pipeline.predict(cls_embeddings)
+
+            fig = plot_confusion_matrix(labels, preds)
+            self._log_figure(f"val/kNN Confusion Matrix", fig)
+            self.log("val/knn_accuracy", accuracy_score(labels, preds), on_epoch=True)
+
+    def get_representations_from_dataloader(
+        self, dataloader: torch.utils.data.DataLoader
+    ):
+        self.eval()
+        cls_embeddings = []
+        timestamp_embeddings = []
+        labels = []
+
+        with torch.no_grad():
+            with tqdm(
+                dataloader, total=len(dataloader), desc="Processing batches", unit="batch", leave=False
+            ) as pbar:
+                for batch in pbar:
+                    x, y = batch
+                    x = x.to(self.device)  # Ensure data is on the correct device
+                    cls, timestamps = self.get_representations(x)
+                    cls_embeddings.append(cls.cpu().numpy())
+                    timestamp_embeddings.append(timestamps.cpu().numpy())
+                    labels.append(y.cpu().numpy())
+
+        return (
+            np.concatenate(cls_embeddings, axis=0), 
+            np.concatenate(timestamp_embeddings, axis=0),
+            np.concatenate(labels, axis=0)
         )
-
-        scheduler_type = self.hparams.get("lr_scheduler", "constant")
-        if scheduler_type == "lambda":
-            lr_scheduler = LambdaLR(
-                optimizer,
-                lr_lambda=lambda epoch: (
-                    1.0 if (epoch + 1) < 3 else (0.9 ** (((epoch + 1) - 3) // 1))
-                ),
-            )
-        elif scheduler_type == "constant":
-            lr_scheduler = LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
-        else:
-            raise ValueError(
-                f"Unknown lr_scheduler: {scheduler_type}. "
-                "Supported values are 'lambda' and 'constant'"
-            )
-
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": lr_scheduler,
-                "interval": "epoch",
-                "frequency": 1,
-            }
-        }

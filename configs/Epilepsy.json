@@ -3,8 +3,10 @@
     "batch_size": 32,
     "input_channels": 1,
     "sequence_len": 178,
+    "num_classes": 2,
     "patch_len": 24,
     "patch_stride": 12,
+    "enable_channel_independence": false,
     "pretraining": {
         "learning_rate": 0.0001273783071501038,
         "weight_decay": 0.00001731739699294851,
@@ -18,6 +20,7 @@
         "weight_decay": 0.0021575029207373205,
         "epochs": 30
     },
+    "pos_embed_type": "none",
     "token_embedding_kernel_size": 3,
     "dropout": 0.1,
     "d_model": 1024,

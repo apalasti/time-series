@@ -1,0 +1,30 @@
+{
+    "task_type": "forecasting",
+    "batch_size": 32,
+    "input_channels": 7,
+    "sequence_len": 512,
+    "patch_len": 16,
+    "patch_stride": 16,
+    "enable_channel_independence": true,
+    "pretraining": {
+        "learning_rate": 0.000021350270238434573,
+        "weight_decay": 0.005551156847369134,
+        "lr_scheduler": "exponential_decay",
+        "contrastive_weight": 0.5,
+        "epochs": 10
+    },
+    "finetuning": {
+        "learning_rate": 0.00021350270238434574,
+        "lr_scheduler": "warmup",
+        "weight_decay": 0.000016413821615923124,
+        "epochs": 30
+    },
+    "prediction_len": 168,
+    "pos_embed_type": "learnable",
+    "token_embedding_kernel_size": 3,
+    "dropout": 0.2,
+    "d_model": 128,
+    "n_layers": 1,
+    "n_heads": 2,
+    "patience": 5
+}

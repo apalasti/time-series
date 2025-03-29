@@ -1,6 +1,30 @@
+import math
+
 import torch
 import torch.nn as nn
 from torch import Tensor
+
+# def patch_attention(m):
+# forward_orig = m.forward
+
+# def wrap(*args, **kwargs):
+# kwargs['need_weights'] = True
+# kwargs['average_attn_weights'] = False
+
+# return forward_orig(*args, **kwargs)
+
+# m.forward = wrap
+
+
+# class SaveOutput:
+# def __init__(self):
+# self.outputs = []
+
+# def __call__(self, module, module_in, module_out):
+# self.outputs.append(module_out[1])
+
+# def clear(self):
+# self.outputs = []
 
 
 class TokenEmbedding(nn.Module):
@@ -36,6 +60,7 @@ class TimeDRL(nn.Module):
         n_layers: int,
         token_embedding_kernel_size: int,
         dropout: float,
+        pos_embed_type = "learnable"
     ) -> None:
         super().__init__()
 
@@ -50,18 +75,40 @@ class TimeDRL(nn.Module):
         self.token_embeddings = TokenEmbedding(
             self.input_channels, d_model, token_embedding_kernel_size
         )
-        # self.positional_embeddings = nn.Parameter(
-        # # +1 Positional Embedding for the [CLS] token
-        # torch.randn(self.sequence_len + 1, d_model, dtype=torch.float),
-        # requires_grad=True,
-        # )
+
+        if pos_embed_type == "learnable":
+            self.positional_embeddings = nn.Parameter(
+                # +1 Positional Embedding for the [CLS] token
+                torch.randn(self.sequence_len + 1, d_model, dtype=torch.float),
+                requires_grad=True,
+            )
+        elif pos_embed_type == "fixed":
+            pe = torch.zeros(sequence_len + 1, d_model, requires_grad=False).float()
+            position = torch.arange(0, sequence_len + 1).float().unsqueeze(1)
+            div_term = (
+                torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model)
+            ).exp()
+
+            pe[:, 0::2] = torch.sin(position * div_term)
+            pe[:, 1::2] = torch.cos(position * div_term)
+            self.register_buffer("positional_embeddings", pe)
+        elif pos_embed_type == "none":
+            self.positional_embeddings = None
+        else:
+            raise ValueError(
+                f"Unknown pos_embed_type: {pos_embed_type}. "
+                "Supported values are 'learnable', 'fixed' and 'none'"
+            )
+
         self.dropout = nn.Dropout(p=dropout)
 
+        # self.save_output = SaveOutput()
         self.encoder = nn.TransformerEncoder(
             encoder_layer=nn.TransformerEncoderLayer(
                 d_model=d_model,
                 nhead=n_heads,
                 batch_first=True,
+                norm_first=True,
                 dropout=dropout,
                 dim_feedforward=4 * d_model,
                 activation="gelu",
@@ -69,6 +116,10 @@ class TimeDRL(nn.Module):
             num_layers=n_layers,
             norm=nn.LayerNorm(self.d_model),
         )
+        # for module in self.encoder.modules():
+        # if isinstance(module, nn.MultiheadAttention):
+        # patch_attention(module)
+        # module.register_forward_hook(self.save_output)
 
         self.reconstructor = nn.Sequential(
             nn.Dropout(dropout),
@@ -83,6 +134,7 @@ class TimeDRL(nn.Module):
         )
 
     def forward(self, x: Tensor):
+        # self.save_output.clear()
         B, T, C = x.shape
         assert T == self.sequence_len and C == self.input_channels, (
             f"Input tensor shape {x.shape} does not match expected dimensions. "
@@ -92,9 +144,16 @@ class TimeDRL(nn.Module):
 
         x = torch.cat([self.cls_token.expand(B, -1, -1), x], dim=1)  # Preprend [CLS]
         x = self.token_embeddings(x)  # Create token embeddings
-        # x = x + self.positional_embeddings[None, : T + 1]  # Apply positional embeddings
+
+        if self.positional_embeddings is not None:  # Apply positional embeddings
+            x = x + self.positional_embeddings[None, : T + 1]
+
         x = self.dropout(x)
-        assert x.shape == (B, T+1, self.d_model)
+        assert x.shape == (B, T+1, self.d_model), (
+            f"Unexpected shape after applying positional embeddings. "
+            f"Expected: {(B, T + 1, self.d_model)}, got: {x.shape}"
+        )
+
         x = self.encoder(x)
         return x
 
