@@ -1,10 +1,14 @@
+import io
+from PIL import Image
 from typing import Literal
 
+import numpy as np
 import lightning as L
 import torch
 import torch.nn as nn
-from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.loggers import WandbLogger, TensorBoardLogger
 from torch import Tensor
+from torch.utils.tensorboard.writer import SummaryWriter
 
 from src.utils import load_lr_scheduler
 
@@ -17,6 +21,12 @@ class BaseModule(L.LightningModule):
         if isinstance(self.logger, WandbLogger):
             logger: WandbLogger = self.logger
             logger.log_metrics({name: fig})
+        elif isinstance(self.logger, TensorBoardLogger):
+            logger: SummaryWriter = self.logger.experiment
+            fig_bytes = fig.to_image(format="png")
+            buf = io.BytesIO(fig_bytes)
+            image = np.array(Image.open(buf))
+            logger.add_image(name, image, global_step=self.global_step, dataformats="HWC")
         else:
             fig.update_layout(title=name)
             fig.show()

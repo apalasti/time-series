@@ -10,7 +10,7 @@ from sklearn.metrics import (accuracy_score, cohen_kappa_score,
 
 from src.base import BaseModule
 from src.pretraining import PretrainedTimeDRL
-from src.utils import visualize_predictions, visualize_weights
+from src.utils import visualize_predictions, visualize_weights, plot_confusion_matrix
 
 
 class ClassificationFineTune(BaseModule):
@@ -34,12 +34,17 @@ class ClassificationFineTune(BaseModule):
         self.classifier = nn.Linear(
             self.hparams["d_model"], self.hparams["num_classes"]
         )
+        nn.init.xavier_uniform_(self.classifier.weight)
+        nn.init.zeros_(self.classifier.bias)
+
         self.timestamp_classifier = nn.Sequential(
             nn.Flatten(start_dim=1),
             nn.Linear(
                 self.hparams["d_model"] * patched_seq_len, self.hparams["num_classes"]
             ),
         )
+        nn.init.xavier_uniform_(self.timestamp_classifier[1].weight)
+        nn.init.zeros_(self.timestamp_classifier[1].bias)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -100,7 +105,6 @@ class ClassificationFineTune(BaseModule):
         )
         fig = visualize_weights(timestamp_weights)
         self._log_figure("val/Timestamp Classifier Weights", fig)
-        import pdb; pdb.set_trace()
 
         self._log_classification_metrics(cls_preds, labels, "val", "cls")
         self._log_classification_metrics(timestamp_preds, labels, "val", "timestamp")
@@ -153,14 +157,7 @@ class ClassificationFineTune(BaseModule):
             }
         )
 
-        cm = confusion_matrix(labels, preds)
-        fig = px.imshow(
-            cm / cm.sum(axis=1, keepdims=True),
-            labels=dict(x="Predicted", y="Actual", color="Count"),
-            x=[f"Class {i}" for i in range(cm.shape[0])],
-            y=[f"Class {i}" for i in range(cm.shape[1])],
-            color_continuous_scale="Blues", text_auto=True,
-        )
+        fig = plot_confusion_matrix(labels, preds)
         self._log_figure(f"{prefix}/{classifier_type}_Confusion Matrix", fig)
 
 

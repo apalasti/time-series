@@ -68,12 +68,12 @@ def main():
         max_epochs=config["epochs"],
         logger=logger,
         callbacks=[
-            EarlyStopping("val/loss", patience=config["patience"], mode="max"),
+            # EarlyStopping("val/loss", patience=config["patience"], mode="min"),
             ModelCheckpoint(
                 dirpath=MODELS_PATH,
                 filename=f"{args.dataset}_finetuned",
-                monitor="val/loss", mode="max",
-                every_n_epochs=1,
+                # monitor="val/loss", mode="min",
+                # every_n_epochs=1,
             ),
         ],
         log_every_n_steps=10,

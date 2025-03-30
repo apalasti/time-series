@@ -48,7 +48,7 @@ def plot_confusion_matrix(labels: np.ndarray, preds: np.ndarray):
     """Generates and returns a confusion matrix plot."""
     cm = confusion_matrix(labels, preds)
     fig = px.imshow(
-        cm / cm.sum(axis=1, keepdims=True),
+        cm / cm.sum(axis=1, keepdims=True), zmin=0, zmax=1,
         labels=dict(x="Predicted", y="Actual", color="Count"),
         x=[f"Class {i}" for i in range(cm.shape[0])],
         y=[f"Class {i}" for i in range(cm.shape[1])],
