@@ -38,7 +38,7 @@ def main():
         + json.dumps(config, indent=4)
     )
 
-    train_dl, val_dl, _ = create_data_loaders(args.dataset, config)
+    train_dl, val_dl, test_dl = create_data_loaders(args.dataset, config)
 
     logger = None
     if args.use_wandb:
@@ -51,7 +51,7 @@ def main():
         max_epochs=config["epochs"],
         logger=logger,
         callbacks=[
-            EarlyStopping("train/loss", patience=config["patience"]),
+            # EarlyStopping("train/loss", patience=config["patience"]),
             ModelCheckpoint(
                 dirpath=MODELS_PATH,
                 filename=f"{args.dataset}_pretrained",
@@ -61,7 +61,7 @@ def main():
         ],
         log_every_n_steps=10,
     )
-    trainer.fit(model, train_dl, val_dl)
+    trainer.fit(model, train_dl, test_dl)
 
 
 if __name__ == "__main__":

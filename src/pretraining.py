@@ -53,7 +53,9 @@ class PretrainedTimeDRL(BaseModule):
 
         self.cls_reconstructor = nn.Sequential(
             nn.Flatten(start_dim=1),
-            nn.Linear(patched_seq_len * config["d_model"], config["d_model"]),
+            nn.Linear(patched_seq_len * config["d_model"], 2 * config["d_model"]),
+            nn.ReLU(),
+            nn.Linear(2 * config["d_model"], config["d_model"]),
         )
 
     def get_representations(self, x: Tensor) -> Tuple[Tensor, Tensor]:
