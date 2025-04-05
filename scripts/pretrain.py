@@ -51,7 +51,7 @@ def main():
         max_epochs=config["epochs"],
         logger=logger,
         callbacks=[
-            # EarlyStopping("train/loss", patience=config["patience"]),
+            EarlyStopping("train/loss", patience=config["patience"]),
             ModelCheckpoint(
                 dirpath=MODELS_PATH,
                 filename=f"{args.dataset}_pretrained",
