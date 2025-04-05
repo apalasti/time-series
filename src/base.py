@@ -1,12 +1,12 @@
 import io
-from PIL import Image
 from typing import Literal
 
-import numpy as np
 import lightning as L
+import numpy as np
 import torch
 import torch.nn as nn
-from lightning.pytorch.loggers import WandbLogger, TensorBoardLogger
+from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
+from PIL import Image
 from torch import Tensor
 
 from src.utils import load_lr_scheduler

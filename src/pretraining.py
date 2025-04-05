@@ -2,19 +2,22 @@ from typing import List, Tuple
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.metrics import accuracy_score
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from torch import Tensor
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.base import BaseModule, InstanceNorm
 from src.time_drl import TimeDRL
 from src.utils import (cosine_similarity_matrix, create_patches,
                        plot_confusion_matrix, visualize_cls_embeddings_2d,
-                       visualize_patch_reconstruction, visualize_pca_components)
+                       visualize_patch_reconstruction,
+                       visualize_pca_components)
 
 TOP_N_COMPONENTS = 15
 KNN_N_NEIGHBORS = 5
@@ -46,6 +49,11 @@ class PretrainedTimeDRL(BaseModule):
             token_embedding_kernel_size=config["token_embedding_kernel_size"],
             dropout=config["dropout"],
             pos_embed_type=config["pos_embed_type"],
+        )
+
+        self.cls_reconstructor = nn.Sequential(
+            nn.Flatten(start_dim=1),
+            nn.Linear(patched_seq_len * config["d_model"], config["d_model"]),
         )
 
     def get_representations(self, x: Tensor) -> Tuple[Tensor, Tensor]:
@@ -83,20 +91,29 @@ class PretrainedTimeDRL(BaseModule):
             ).mean()
         ) / 2.0
 
+        # Experiment: Train a model which reconstructs the CLS embeddings from
+        # the timestamp ones. Measure how good the reconstruction is on both the
+        # training set and the reconstruction set.
+        reconstructed_cls_a = self.cls_reconstructor(timestamps_a.detach())
+        reconstructed_cls_b = self.cls_reconstructor(timestamps_b.detach())
+        cls_reconstruction_loss = (
+            F.mse_loss(reconstructed_cls_a, cls_a.detach())
+            + F.mse_loss(reconstructed_cls_b, cls_b.detach())
+        ) / 2.0
+
         loss = (
             self.hparams.get("reconstruction_weight", 1.0) * reconstruction_loss
             + self.hparams.get("contrastive_weight", 1.0) * contrastive_loss
         )
 
-        self.log_dict(
-            {
-                "train/loss": loss,
-                "train/reconstruction_loss": reconstruction_loss,
-                "train/contrastive_loss": contrastive_loss,
-            }, prog_bar=True, on_step=True,
-        )
+        self.log_dict({
+            "train/loss": loss,
+            "train/reconstruction_loss": reconstruction_loss,
+            "train/contrastive_loss": contrastive_loss,
+            "train/cls_reconstruction_loss": cls_reconstruction_loss,
+        }, prog_bar=True, on_step=True)
 
-        return loss
+        return loss + cls_reconstruction_loss
 
     def on_validation_epoch_start(self):
         self.cls_embeddings: List[np.ndarray] = []
@@ -108,6 +125,9 @@ class PretrainedTimeDRL(BaseModule):
         cls, timestamps = self.get_representations(x)
         reconstructions = self.model.reconstructor(timestamps)
         reconstruction_loss = F.mse_loss(reconstructions, self.create_patches(x))
+
+        reconstructed_cls = self.cls_reconstructor(timestamps)
+        cls_reconstruction_loss = F.mse_loss(reconstructed_cls, cls)
 
         if batch_idx == 0:
             fig = visualize_pca_components(
@@ -122,7 +142,10 @@ class PretrainedTimeDRL(BaseModule):
             fig = visualize_patch_reconstruction(patches_np[0], reconstructions_np[0])
             self._log_figure("val/Reconstruction Comparison", fig)
 
-        self.log("val/reconstruction_loss", reconstruction_loss, on_epoch=True)
+        self.log_dict({
+            "val/reconstruction_loss": reconstruction_loss,
+            "val/cls_reconstruction_loss": cls_reconstruction_loss,
+        }, on_epoch=True)
         self.cls_embeddings.append(cls.detach().cpu().numpy())
         if y.ndim == 1:  # This means a classification dataset
             self.cls_labels.append(y.detach().cpu().numpy())
@@ -158,9 +181,7 @@ class PretrainedTimeDRL(BaseModule):
             self._log_figure(f"val/kNN Confusion Matrix", fig)
             self.log("val/knn_accuracy", accuracy_score(labels, preds), on_epoch=True)
 
-    def get_representations_from_dataloader(
-        self, dataloader: torch.utils.data.DataLoader
-    ):
+    def get_representations_from_dataloader(self, dataloader: DataLoader):
         self.eval()
         cls_embeddings = []
         timestamp_embeddings = []
@@ -168,7 +189,8 @@ class PretrainedTimeDRL(BaseModule):
 
         with torch.no_grad():
             with tqdm(
-                dataloader, total=len(dataloader), desc="Processing batches", unit="batch", leave=False
+                dataloader, total=len(dataloader), unit="batch", leave=True,
+                desc="Extracting representations from dataloader",
             ) as pbar:
                 for batch in pbar:
                     x, y = batch

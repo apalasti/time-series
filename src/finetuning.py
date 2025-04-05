@@ -10,7 +10,8 @@ from sklearn.metrics import (accuracy_score, cohen_kappa_score,
 
 from src.base import BaseModule
 from src.pretraining import PretrainedTimeDRL
-from src.utils import visualize_predictions, visualize_weights, plot_confusion_matrix
+from src.utils import (plot_confusion_matrix, visualize_predictions,
+                       visualize_weights)
 
 
 class ClassificationFineTune(BaseModule):
