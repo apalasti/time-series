@@ -53,9 +53,8 @@ class PretrainedTimeDRL(BaseModule):
 
         self.cls_reconstructor = nn.Sequential(
             nn.Flatten(start_dim=1),
-            nn.Linear(patched_seq_len * config["d_model"], 2 * config["d_model"]),
-            nn.ReLU(),
-            nn.Linear(2 * config["d_model"], config["d_model"]),
+            nn.Dropout(float(config.get("cls_reconstructor_dropout", 0.0))),
+            nn.Linear(patched_seq_len * config["d_model"], config["d_model"]),
         )
 
     def get_representations(self, x: Tensor) -> Tuple[Tensor, Tensor]:
@@ -74,8 +73,14 @@ class PretrainedTimeDRL(BaseModule):
         cls_a, timestamps_a = self.get_representations(x)
         cls_b, timestamps_b = self.get_representations(x)
 
-        reconstructed_a = self.model.reconstructor(timestamps_a)
-        reconstructed_b = self.model.reconstructor(timestamps_b)
+        reconstructed_a = self.model.reconstructor(
+            # torch.cat([cls_a.unsqueeze(1).expand(-1, timestamps_a.shape[1], -1), timestamps_a], dim=-1)
+            timestamps_a
+        )
+        reconstructed_b = self.model.reconstructor(
+            # torch.cat([cls_b.unsqueeze(1).expand(-1, timestamps_b.shape[1], -1), timestamps_b], dim=-1)
+            timestamps_b
+        )
 
         reconstruction_loss = (
             F.mse_loss(reconstructed_a, self.create_patches(x))
@@ -93,9 +98,6 @@ class PretrainedTimeDRL(BaseModule):
             ).mean()
         ) / 2.0
 
-        # Experiment: Train a model which reconstructs the CLS embeddings from
-        # the timestamp ones. Measure how good the reconstruction is on both the
-        # training set and the reconstruction set.
         reconstructed_cls_a = self.cls_reconstructor(timestamps_a.detach())
         reconstructed_cls_b = self.cls_reconstructor(timestamps_b.detach())
         cls_reconstruction_loss = (
@@ -117,6 +119,11 @@ class PretrainedTimeDRL(BaseModule):
 
         return loss + cls_reconstruction_loss
 
+    # def on_after_backward(self):
+    # for param in self.cls_reconstructor.parameters():
+    # if param.grad is not None:
+    # param.grad = -param.grad
+
     def on_validation_epoch_start(self):
         self.cls_embeddings: List[np.ndarray] = []
         self.cls_labels: List[np.ndarray] = []
@@ -125,11 +132,14 @@ class PretrainedTimeDRL(BaseModule):
         x, y = batch
 
         cls, timestamps = self.get_representations(x)
-        reconstructions = self.model.reconstructor(timestamps)
+        reconstructions = self.model.reconstructor(
+            # torch.cat([cls.unsqueeze(1).expand(-1, timestamps.shape[1], -1), timestamps], dim=-1)
+            timestamps
+        )
         reconstruction_loss = F.mse_loss(reconstructions, self.create_patches(x))
 
         reconstructed_cls = self.cls_reconstructor(timestamps)
-        cls_reconstruction_loss = F.mse_loss(reconstructed_cls, cls)
+        cls_reconstruction_loss = F.cosine_similarity(reconstructed_cls, cls).mean()
 
         if batch_idx == 0:
             fig = visualize_pca_components(
@@ -191,7 +201,7 @@ class PretrainedTimeDRL(BaseModule):
 
         with torch.no_grad():
             with tqdm(
-                dataloader, total=len(dataloader), unit="batch", leave=True,
+                dataloader, total=len(dataloader), unit="batch", leave=False,
                 desc="Extracting representations from dataloader",
             ) as pbar:
                 for batch in pbar:

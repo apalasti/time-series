@@ -24,7 +24,32 @@ def parse_args():
         action="store_true",
         help="Enable Weights & Biases logging",
     )
+    parser.add_argument(
+        "--params",
+        nargs="*",
+        default=[],
+        help="Override config parameters, e.g. --params epochs=20 lr=0.001",
+    )
     return parser.parse_args()
+
+
+def update_config_from_args(config, params_from_args):
+    for item in params_from_args:
+        if "=" not in item:
+            raise ValueError(f"Invalid format for --params: '{item}'. Use key=value.")
+        key, value = item.split("=", 1)
+        # Try to infer type from existing config
+        if key in config:
+            orig_type = type(config[key])
+            try:
+                value = orig_type(value)
+            except Exception:
+                raise ValueError(
+                    f"Failed to convert '{value}' to {orig_type.__name__} for key '{key}'. "
+                    f"Original value was {config[key]} of type {orig_type.__name__}."
+                )
+        config[key] = value
+    return config
 
 
 def main():
@@ -33,6 +58,7 @@ def main():
 
     args = parse_args()
     config = get_config(args.dataset, "pretraining")
+    config = update_config_from_args(config, args.params)
     print(
         f"Loaded configuration for dataset '{args.dataset}':"
         + json.dumps(config, indent=4)
