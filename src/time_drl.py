@@ -4,27 +4,32 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-# def patch_attention(m):
-# forward_orig = m.forward
-
-# def wrap(*args, **kwargs):
-# kwargs['need_weights'] = True
-# kwargs['average_attn_weights'] = False
-
-# return forward_orig(*args, **kwargs)
-
-# m.forward = wrap
 
 
-# class SaveOutput:
-# def __init__(self):
-# self.outputs = []
+class AttentionInspector:
+    def __init__(self, model: nn.Module):
+        self.outputs = []
 
-# def __call__(self, module, module_in, module_out):
-# self.outputs.append(module_out[1])
+        for module in model.modules():
+            if isinstance(module, nn.MultiheadAttention):
+                AttentionInspector.patch_attention(module)
+                module.register_forward_hook(self)
 
-# def clear(self):
-# self.outputs = []
+    @staticmethod
+    def patch_attention(m):
+        forward_orig = m.forward
+        def wrap(*args, **kwargs):
+            kwargs['need_weights'] = True
+            kwargs['average_attn_weights'] = False
+
+            return forward_orig(*args, **kwargs)
+        m.forward = wrap
+
+    def __call__(self, module, module_in, module_out):
+        self.outputs.append(module_out[1])
+
+    def clear(self):
+        self.outputs = []
 
 
 class TokenEmbedding(nn.Module):
@@ -116,14 +121,11 @@ class TimeDRL(nn.Module):
             num_layers=n_layers,
             norm=nn.LayerNorm(self.d_model),
         )
-        # for module in self.encoder.modules():
-        # if isinstance(module, nn.MultiheadAttention):
-        # patch_attention(module)
-        # module.register_forward_hook(self.save_output)
 
         self.reconstructor = nn.Sequential(
             nn.Dropout(dropout),
-            nn.Linear(self.d_model, self.input_channels),
+            # nn.Linear(2 * self.d_model, self.input_channels),
+            nn.Linear(1 * self.d_model, self.input_channels),
         )
         self.contrastive_predictor = nn.Sequential(
             nn.Linear(self.d_model, self.d_model // 2),
