@@ -9,6 +9,49 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import confusion_matrix
 
 
+def visualize_attention(attention_values):
+    attention_mean = np.mean(attention_values, axis=0)
+    attention_std = np.std(attention_values, axis=0)
+    n_layers, n_heads, n_tokens = attention_mean.shape
+
+    fig = make_subplots(
+        rows=n_layers, cols=2, subplot_titles=[f"Layer {i+1}" for i in range(n_layers)]
+    )
+
+    for i in range(n_layers):
+        layer_mean = attention_mean[i, :, :]
+        layer_std = attention_std[i, :, :]
+        row_idx, col_idx = (i // 2) + 1, (i % 2) + 1
+
+        text = np.char.add(
+            np.char.mod('%.2f', layer_mean),
+            np.char.add('<br>±', np.char.mod('%.2f', layer_std))
+        )
+
+        fig.add_trace(
+            go.Heatmap(
+                z=layer_mean, showscale=False,
+                x=[f"Token {j+1}" for j in range(n_tokens)],
+                y=[f"Head {j+1}" for j in range(n_heads)],
+                colorscale="Viridis", zmin=0.0, zmax=1.0,
+                text=text, texttemplate="%{text}",
+            ),
+            row=row_idx,
+            col=col_idx,
+        )
+
+    height_per_row = n_heads * 60
+    width_per_col = n_tokens * 60
+    num_rows = (n_layers + 1) // 2 # Calculate number of rows needed
+
+    fig.update_layout(
+        height=num_rows * height_per_row,
+        width=2 * width_per_col, # Always 2 columns
+    )
+
+    return fig
+
+
 def visualize_pca_components(
     time_series_data: np.ndarray,
     timestamp_embeddings: np.ndarray,

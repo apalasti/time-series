@@ -5,15 +5,17 @@ import torch.nn as nn
 from torch import Tensor
 
 
-
 class AttentionInspector:
     def __init__(self, model: nn.Module):
         self.outputs = []
+        self.model = model
 
-        for module in model.modules():
+        self.hooked_modules = []
+        for module in self.model.modules():
             if isinstance(module, nn.MultiheadAttention):
-                AttentionInspector.patch_attention(module)
-                module.register_forward_hook(self)
+                hook_handle = module.register_forward_hook(self)
+                self.hooked_modules.append((module, hook_handle, module.forward))
+                self.patch_attention(module)
 
     @staticmethod
     def patch_attention(m):
@@ -21,7 +23,6 @@ class AttentionInspector:
         def wrap(*args, **kwargs):
             kwargs['need_weights'] = True
             kwargs['average_attn_weights'] = False
-
             return forward_orig(*args, **kwargs)
         m.forward = wrap
 
@@ -29,7 +30,22 @@ class AttentionInspector:
         self.outputs.append(module_out[1])
 
     def clear(self):
-        self.outputs = []
+        self.outputs.clear()
+
+    def get_attention_values(self):
+        attention_values = []
+        num_layers = len(self.hooked_modules)
+        for start in range(0, len(self.outputs), num_layers):
+            end = start + num_layers
+            out = torch.stack(self.outputs[start:end], dim=1)
+            attention_values.append(out)
+        return torch.cat(attention_values)
+
+    def unsubscribe(self):
+        for module, hook_handle, original_forward in self.hooked_modules:
+            module.forward = original_forward
+            hook_handle.remove()
+        self.hooked_modules.clear()
 
 
 class TokenEmbedding(nn.Module):

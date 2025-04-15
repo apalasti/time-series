@@ -5,9 +5,10 @@ from .visualization import (cosine_similarity_matrix,
                             plot_ts, visualize_cls_embeddings_2d,
                             visualize_patch_reconstruction,
                             visualize_pca_components, visualize_predictions,
-                            visualize_weights)
+                            visualize_weights, visualize_attention)
 
 __all__ = [
+    "visualize_attention",
     "visualize_pca_components",
     "plot_confusion_matrix",
     "visualize_weights",

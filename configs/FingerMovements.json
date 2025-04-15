@@ -9,7 +9,7 @@
     "enable_channel_independence": false,
     "pretraining": {
         "learning_rate": 0.001896221837257953,
-        "weight_decay": 0.008096318914112003,
+        "weight_decay": 0.0008096318914112003,
         "lr_scheduler": "lambda",
         "contrastive_weight": 0.1,
         "epochs": 30
@@ -20,7 +20,7 @@
         "weight_decay": 0.00006113802122278008,
         "epochs": 30
     },
-    "pos_embed_type": "none",
+    "pos_embed_type": "fixed",
     "token_embedding_kernel_size": 3,
     "dropout": 0.2,
     "d_model": 192,

@@ -13,10 +13,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.base import BaseModule, InstanceNorm
-from src.time_drl import TimeDRL
+from src.time_drl import TimeDRL, AttentionInspector
 from src.utils import (cosine_similarity_matrix, create_patches,
                        plot_confusion_matrix, visualize_cls_embeddings_2d,
-                       visualize_patch_reconstruction,
+                       visualize_patch_reconstruction, visualize_attention,
                        visualize_pca_components)
 
 TOP_N_COMPONENTS = 15
@@ -127,6 +127,7 @@ class PretrainedTimeDRL(BaseModule):
     def on_validation_epoch_start(self):
         self.cls_embeddings: List[np.ndarray] = []
         self.cls_labels: List[np.ndarray] = []
+        self.inspector = AttentionInspector(self.model)
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
@@ -163,6 +164,12 @@ class PretrainedTimeDRL(BaseModule):
             self.cls_labels.append(y.detach().cpu().numpy())
 
     def on_validation_epoch_end(self):
+        attention_values = self.inspector.get_attention_values()
+        cls_attention_values = attention_values[:, :, :, 0, :] # (N, Layer, Head, From, To)
+        fig = visualize_attention(cls_attention_values.cpu().numpy())
+        self._log_figure("val/[CLS] Attention Values", fig)
+        self.inspector.unsubscribe()
+
         cls_embeddings = np.concatenate(self.cls_embeddings, axis=0)
 
         fig = visualize_cls_embeddings_2d(
