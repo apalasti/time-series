@@ -37,7 +37,7 @@ class ClassificationDataset(Dataset):
         if self.dataset_path.suffix != ".pt":
             raise ValueError(f"Dataset file must have .pt extension, got {self.dataset_path.suffix}")
 
-        self.dataset: Dict[str, Tensor] = torch.load(self.dataset_path, map_location)
+        self.dataset: Dict[str, Tensor] = torch.load(self.dataset_path, map_location, weights_only=True)
 
         # The samples is of shape: (N, T, C) where:
         #   - N = Number of samples
