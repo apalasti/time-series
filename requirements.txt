@@ -1,7 +1,8 @@
+pillow==11.2.1
 requests==2.32.3
 plotly==5.24.1
 numpy==2.0.2
-torch==2.6.0
+torch==2.5.1
 pandas==2.2.3
 einops==0.8.1
 lightning==2.5.0
