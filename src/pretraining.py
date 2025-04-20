@@ -51,11 +51,11 @@ class PretrainedTimeDRL(BaseModule):
             pos_embed_type=config["pos_embed_type"],
         )
 
-        self.cls_reconstructor = nn.Sequential(
-            nn.Flatten(start_dim=1),
-            nn.Dropout(float(config.get("cls_reconstructor_dropout", 0.0))),
-            nn.Linear(patched_seq_len * config["d_model"], config["d_model"]),
-        )
+        # self.cls_reconstructor = nn.Sequential(
+            # nn.Flatten(start_dim=1),
+            # nn.Dropout(float(config.get("cls_reconstructor_dropout", 0.0))),
+            # nn.Linear(patched_seq_len * config["d_model"], config["d_model"]),
+        # )
 
     def get_representations(self, x: Tensor) -> Tuple[Tensor, Tensor]:
         x = self.instance_norm(x)
@@ -98,12 +98,12 @@ class PretrainedTimeDRL(BaseModule):
             ).mean()
         ) / 2.0
 
-        reconstructed_cls_a = self.cls_reconstructor(timestamps_a.detach())
-        reconstructed_cls_b = self.cls_reconstructor(timestamps_b.detach())
-        cls_reconstruction_loss = (
-            F.mse_loss(reconstructed_cls_a, cls_a.detach())
-            + F.mse_loss(reconstructed_cls_b, cls_b.detach())
-        ) / 2.0
+        # reconstructed_cls_a = self.cls_reconstructor(timestamps_a.detach())
+        # reconstructed_cls_b = self.cls_reconstructor(timestamps_b.detach())
+        # cls_reconstruction_loss = (
+            # F.mse_loss(reconstructed_cls_a, cls_a.detach())
+            # + F.mse_loss(reconstructed_cls_b, cls_b.detach())
+        # ) / 2.0
 
         loss = (
             self.hparams.get("reconstruction_weight", 1.0) * reconstruction_loss
@@ -114,10 +114,10 @@ class PretrainedTimeDRL(BaseModule):
             "train/loss": loss,
             "train/reconstruction_loss": reconstruction_loss,
             "train/contrastive_loss": contrastive_loss,
-            "train/cls_reconstruction_loss": cls_reconstruction_loss,
+            # "train/cls_reconstruction_loss": cls_reconstruction_loss,
         }, prog_bar=True, on_step=True)
 
-        return loss + cls_reconstruction_loss
+        return loss # + cls_reconstruction_loss
 
     # def on_after_backward(self):
     # for param in self.cls_reconstructor.parameters():
@@ -139,8 +139,8 @@ class PretrainedTimeDRL(BaseModule):
         )
         reconstruction_loss = F.mse_loss(reconstructions, self.create_patches(x))
 
-        reconstructed_cls = self.cls_reconstructor(timestamps)
-        cls_reconstruction_loss = F.cosine_similarity(reconstructed_cls, cls).mean()
+        # reconstructed_cls = self.cls_reconstructor(timestamps)
+        # cls_reconstruction_loss = F.cosine_similarity(reconstructed_cls, cls).mean()
 
         if batch_idx == 0:
             fig = visualize_pca_components(
@@ -157,7 +157,7 @@ class PretrainedTimeDRL(BaseModule):
 
         self.log_dict({
             "val/reconstruction_loss": reconstruction_loss,
-            "val/cls_reconstruction_loss": cls_reconstruction_loss,
+            # "val/cls_reconstruction_loss": cls_reconstruction_loss,
         }, on_epoch=True)
         self.cls_embeddings.append(cls.detach().cpu().numpy())
         if y.ndim == 1:  # This means a classification dataset
@@ -208,7 +208,7 @@ class PretrainedTimeDRL(BaseModule):
 
         with torch.no_grad():
             with tqdm(
-                dataloader, total=len(dataloader), unit="batch", leave=False,
+                dataloader, total=len(dataloader), unit="batch", leave=True,
                 desc="Extracting representations from dataloader",
             ) as pbar:
                 for batch in pbar:
