@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.multiclass import unique_labels
@@ -11,10 +12,11 @@ from tqdm import trange
 
 
 class LinearReconstructor(RegressorMixin, BaseEstimator):
-    def __init__(self, dropout_rate=0.1, learning_rate=1e-3,
+    def __init__(self, dropout_rate=0.1, learning_rate=1e-3, weight_decay=0.0,
                  epochs=100, batch_size=32, device="cpu", random_state=None):
         self.dropout_rate = dropout_rate
         self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
         self.epochs = epochs
         self.batch_size = batch_size
         self.device = device
@@ -50,10 +52,13 @@ class LinearReconstructor(RegressorMixin, BaseEstimator):
         dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
 
         criterion = nn.MSELoss()
-        optimizer = optim.Adam(self.model_.parameters(), lr=self.learning_rate)
+        optimizer = optim.AdamW(
+            self.model_.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay
+        )
+        scheduler = CosineAnnealingLR(optimizer, T_max=self.epochs)
 
         self.model_.train()
-        self.history_ = {"loss": [], "cosine_similarity": []}
+        self.history_ = {"loss": [], "cosine_similarity": [], "lr": []}
 
         for _ in trange(
             0, self.epochs,
@@ -79,6 +84,9 @@ class LinearReconstructor(RegressorMixin, BaseEstimator):
             avg_epoch_sim = epoch_sim / len(dataset)
             self.history_["loss"].append(avg_epoch_loss)
             self.history_["cosine_similarity"].append(avg_epoch_sim)
+            self.history_["lr"].append(optimizer.param_groups[0]['lr'])
+
+            scheduler.step()
 
         self.is_fitted_ = True
         return self
@@ -94,10 +102,11 @@ class LinearReconstructor(RegressorMixin, BaseEstimator):
 
 
 class LinearClassifier(ClassifierMixin, BaseEstimator):
-    def __init__(self, dropout_rate=0.0, learning_rate=1e-3,
+    def __init__(self, dropout_rate=0.0, learning_rate=1e-3, weight_decay=0.0,
                  epochs=100, batch_size=32, device="cpu", random_state=None):
         self.dropout_rate = dropout_rate
         self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
         self.epochs = epochs
         self.batch_size = batch_size
         self.device = device
@@ -146,10 +155,13 @@ class LinearClassifier(ClassifierMixin, BaseEstimator):
 
         # Use CrossEntropyLoss for classification
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(self.model_.parameters(), lr=self.learning_rate)
+        optimizer = optim.AdamW(
+            self.model_.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay
+        )
+        scheduler = CosineAnnealingLR(optimizer, T_max=self.epochs)
 
         self.model_.train()
-        self.history_ = {"loss": [], "accuracy": []}
+        self.history_ = {"loss": [], "accuracy": [], "lr": []}
 
         for _ in trange(
             0, self.epochs,
@@ -180,6 +192,9 @@ class LinearClassifier(ClassifierMixin, BaseEstimator):
             epoch_accuracy = correct_predictions / total_samples
             self.history_["loss"].append(avg_epoch_loss)
             self.history_["accuracy"].append(epoch_accuracy)
+            self.history_["lr"].append(optimizer.param_groups[0]['lr'])
+
+            scheduler.step()
 
         self.is_fitted_ = True
         return self
