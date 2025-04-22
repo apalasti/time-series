@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, f1_score, cohen_kappa_score
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -60,6 +60,7 @@ class PretrainedTimeDRL(BaseModule):
     def get_representations(self, x: Tensor) -> Tuple[Tensor, Tensor]:
         x = self.instance_norm(x)
         x = self.create_patches(x)
+        # x = F.dropout1d(x, p=0.2, training=self.training)
         representations = self.model(x)
         return representations[:, 0], representations[:, 1:]
 
@@ -198,7 +199,11 @@ class PretrainedTimeDRL(BaseModule):
 
             fig = plot_confusion_matrix(labels, preds)
             self._log_figure(f"val/kNN Confusion Matrix", fig)
-            self.log("val/knn_accuracy", accuracy_score(labels, preds), on_epoch=True)
+            self.log_dict({
+                "val/knn_accuracy":accuracy_score(labels, preds),
+                "val/knn_mf1": f1_score(labels, preds, average="macro"),
+                "val/knn_kappa": cohen_kappa_score(labels, preds)
+            }, on_epoch=True)
 
     def get_representations_from_dataloader(self, dataloader: DataLoader):
         self.eval()
