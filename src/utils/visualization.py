@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, Literal
 
 import numpy as np
 import pandas as pd
@@ -6,6 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 from sklearn.metrics import confusion_matrix
 
 
@@ -160,22 +161,33 @@ def visualize_predictions(past: np.ndarray, future: np.ndarray, preds: np.ndarra
 
 
 def visualize_cls_embeddings_2d(
-    embeddings: np.ndarray, labels: Union[np.ndarray, None] = None
+    embeddings: np.ndarray, 
+    labels: Union[np.ndarray, None] = None,
+    method: Literal["pca", "tsne"] = "pca"
 ):
     if labels is None:
         labels = np.zeros(len(embeddings))
     assert embeddings.shape[0] == labels.shape[0]
+    
+    if method == "pca":
+        reducer = PCA(n_components=2)
+        reduced_embeddings = reducer.fit_transform(embeddings)
+        x_label = f"PC1 ({reducer.explained_variance_ratio_[0]:.1%})"
+        y_label = f"PC2 ({reducer.explained_variance_ratio_[1]:.1%})"
+    elif method == "tsne":
+        reducer = TSNE(n_components=2, random_state=42)
+        reduced_embeddings = reducer.fit_transform(embeddings)
+        x_label = "t-SNE Dimension 1"
+        y_label = "t-SNE Dimension 2"
+    else:
+        raise ValueError(f"Unknown method: {method}. Choose 'pca' or 'tsne'")
 
-    pca = PCA(n_components=2)
-    reduced_embeddings = pca.fit_transform(embeddings)
     fig = px.scatter(
         x=reduced_embeddings[:, 0],
         y=reduced_embeddings[:, 1],
         color=["Class " + str(label) for label in labels.astype(str)],
-        labels={
-            "x": f"PC1 ({pca.explained_variance_ratio_[0]:.1%})",
-            "y": f"PC2 ({pca.explained_variance_ratio_[1]:.1%})",
-        },
+        labels={"x": x_label, "y": y_label},
+        title=f"CLS Embeddings ({method.upper()})"
     )
     fig.update_layout(
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)

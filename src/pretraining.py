@@ -176,8 +176,16 @@ class PretrainedTimeDRL(BaseModule):
         fig = visualize_cls_embeddings_2d(
             cls_embeddings,
             np.concatenate(self.cls_labels, axis=0) if self.cls_labels else None,
+            method="pca",
         )
-        self._log_figure("val/[CLS] Embeddings", fig)
+        self._log_figure("val/[CLS] Embeddings (PCA)", fig)
+
+        fig = visualize_cls_embeddings_2d(
+            cls_embeddings,
+            np.concatenate(self.cls_labels, axis=0) if self.cls_labels else None,
+            method="tsne",
+        )
+        self._log_figure("val/[CLS] Embeddings (TSNE)", fig)
 
         if self.cls_labels:
             labels = np.concatenate(self.cls_labels, axis=0)
