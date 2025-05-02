@@ -192,7 +192,7 @@ class LinearClassifier(ClassifierMixin, BaseEstimator):
             epoch_accuracy = correct_predictions / total_samples
             self.history_["loss"].append(avg_epoch_loss)
             self.history_["accuracy"].append(epoch_accuracy)
-            self.history_["lr"].append(optimizer.param_groups[0]['lr'])
+            self.history_["lr"].append(optimizer.param_groups[0]["lr"])
 
             scheduler.step()
 

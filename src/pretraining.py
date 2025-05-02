@@ -14,6 +14,7 @@ from tqdm import tqdm
 
 from src.base import BaseModule, InstanceNorm
 from src.time_drl import TimeDRL, AttentionInspector
+from src.linear_models import LinearClassifier
 from src.utils import (cosine_similarity_matrix, create_patches,
                        plot_confusion_matrix, visualize_cls_embeddings_2d,
                        visualize_patch_reconstruction, visualize_attention,
@@ -52,9 +53,9 @@ class PretrainedTimeDRL(BaseModule):
         )
 
         # self.cls_reconstructor = nn.Sequential(
-            # nn.Flatten(start_dim=1),
-            # nn.Dropout(float(config.get("cls_reconstructor_dropout", 0.0))),
-            # nn.Linear(patched_seq_len * config["d_model"], config["d_model"]),
+        # nn.Flatten(start_dim=1),
+        # nn.Dropout(float(config.get("cls_reconstructor_dropout", 0.0))),
+        # nn.Linear(patched_seq_len * config["d_model"], config["d_model"]),
         # )
 
     def get_representations(self, x: Tensor) -> Tuple[Tensor, Tensor]:
@@ -102,8 +103,8 @@ class PretrainedTimeDRL(BaseModule):
         # reconstructed_cls_a = self.cls_reconstructor(timestamps_a.detach())
         # reconstructed_cls_b = self.cls_reconstructor(timestamps_b.detach())
         # cls_reconstruction_loss = (
-            # F.mse_loss(reconstructed_cls_a, cls_a.detach())
-            # + F.mse_loss(reconstructed_cls_b, cls_b.detach())
+        # F.mse_loss(reconstructed_cls_a, cls_a.detach())
+        # + F.mse_loss(reconstructed_cls_b, cls_b.detach())
         # ) / 2.0
 
         loss = (
@@ -211,6 +212,22 @@ class PretrainedTimeDRL(BaseModule):
                 "val/knn_accuracy":accuracy_score(labels, preds),
                 "val/knn_mf1": f1_score(labels, preds, average="macro"),
                 "val/knn_kappa": cohen_kappa_score(labels, preds)
+            }, on_epoch=True)
+
+            # Perform linear classfication as well
+            classifier = LinearClassifier(
+                learning_rate=self.hparams["learning_rate"],
+                weight_decay=self.hparams["weight_decay"],
+                epochs=30,
+                device=self.device,
+            )
+            with torch.enable_grad():
+                classifier.fit(train_cls_embeddings, train_labels)
+            preds = classifier.predict(cls_embeddings)
+            self.log_dict({
+                "val/linear_accuracy":accuracy_score(labels, preds),
+                "val/linear_mf1": f1_score(labels, preds, average="macro"),
+                "val/linear_kappa": cohen_kappa_score(labels, preds)
             }, on_epoch=True)
 
     def get_representations_from_dataloader(self, dataloader: DataLoader):

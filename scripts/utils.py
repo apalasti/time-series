@@ -18,7 +18,7 @@ def get_config(dataset_name, job_type: Literal["pretraining", "finetuning"]) -> 
         with open(config_path, "r") as f:
             config: Dict = json.load(f)
             job_specific = config.pop(job_type, None)
-            config.pop("finetuning" if job_type == "pretraining" else "pretraining")
+            # config.pop("finetuning" if job_type == "pretraining" else "pretraining")
             return {**config, **job_specific}
     except FileNotFoundError:
         raise FileNotFoundError(
