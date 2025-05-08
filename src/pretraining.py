@@ -215,20 +215,20 @@ class PretrainedTimeDRL(BaseModule):
             }, on_epoch=True)
 
             # Perform linear classfication as well
-            classifier = LinearClassifier(
-                learning_rate=self.hparams["learning_rate"],
-                weight_decay=self.hparams["weight_decay"],
-                epochs=30,
-                device=self.device,
-            )
-            with torch.enable_grad():
-                classifier.fit(train_cls_embeddings, train_labels)
-            preds = classifier.predict(cls_embeddings)
-            self.log_dict({
-                "val/linear_accuracy":accuracy_score(labels, preds),
-                "val/linear_mf1": f1_score(labels, preds, average="macro"),
-                "val/linear_kappa": cohen_kappa_score(labels, preds)
-            }, on_epoch=True)
+            # classifier = LinearClassifier(
+            # learning_rate=self.hparams["learning_rate"],
+            # weight_decay=self.hparams["weight_decay"],
+            # epochs=30,
+            # device=self.device,
+            # )
+            # with torch.enable_grad():
+            # classifier.fit(train_cls_embeddings, train_labels)
+            # preds = classifier.predict(cls_embeddings)
+            # self.log_dict({
+            # "val/linear_accuracy":accuracy_score(labels, preds),
+            # "val/linear_mf1": f1_score(labels, preds, average="macro"),
+            # "val/linear_kappa": cohen_kappa_score(labels, preds)
+            # }, on_epoch=True)
 
     def get_representations_from_dataloader(self, dataloader: DataLoader):
         self.eval()

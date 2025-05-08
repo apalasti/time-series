@@ -30,6 +30,12 @@ def parse_args():
         default=[],
         help="Override config parameters, e.g. --params epochs=20 lr=0.001",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=2023,
+        help="Random seed for reproducibility",
+    )
     return parser.parse_args()
 
 
@@ -53,10 +59,11 @@ def update_config_from_args(config, params_from_args):
 
 
 def main():
-    L.seed_everything(seed=2023)
+    args = parse_args()
+
+    L.seed_everything(seed=args.seed)
     MODELS_PATH.mkdir(exist_ok=True)
 
-    args = parse_args()
     config = get_config(args.dataset, "pretraining")
     config = update_config_from_args(config, args.params)
     print(
