@@ -13,6 +13,7 @@ from src.linear_models import LinearClassifier
 
 
 MAX_SAMPLES_FOR_SHAPLEY = 2000
+NUM_RANDOM_TRIALS = 15
 
 
 def shapley_explainer(model: LinearClassifier, samples: np.ndarray, seed=None):
@@ -153,14 +154,14 @@ def main():
 
             # Randomly mask out the timestep features of the test samples
             avg_accuracy = 0
-            for _ in range(10):
+            for _ in range(NUM_RANDOM_TRIALS):
                 timesteps_random = mask_timesteps(test_timesteps, np.array([
                     np.random.choice(order, size=masked_count, replace=False)
                     for _ in range(len(test_timesteps))
                 ]))
                 preds_random = classifier.predict(timesteps_random)
                 avg_accuracy += accuracy_score(test_labels, preds_random)
-            avg_accuracy /= 10
+            avg_accuracy /= NUM_RANDOM_TRIALS
             accuracy_random.append(avg_accuracy)
         
         results[dataset_name]["accuracy_shap"] = accuracy_shap
