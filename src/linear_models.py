@@ -145,6 +145,7 @@ class LinearClassifier(ClassifierMixin, BaseEstimator):
              )
 
         # Build model based on input dimensions and number of classes
+        self.input_features = n_timesteps * n_features
         self._build_model(n_timesteps * n_features, self.n_classes_)
 
         X_tensor = torch.tensor(X, dtype=torch.float32).to(self._device)
@@ -213,3 +214,39 @@ class LinearClassifier(ClassifierMixin, BaseEstimator):
         probabilities = self.predict_proba(X)
         indices = np.argmax(probabilities, axis=1)
         return self.classes_[indices]
+
+    def state_dict(self):
+        if not self.is_fitted_:
+            raise RuntimeError("Cannot save unfitted model. Call fit() first.")
+
+        return {
+            "model_state_dict": self.model_.state_dict(),
+            "init_params": {
+                "dropout_rate": self.dropout_rate,
+                "learning_rate": self.learning_rate,
+                "weight_decay": self.weight_decay,
+                "epochs": self.epochs,
+                "batch_size": self.batch_size,
+                "device": self.device,
+                "random_state": self.random_state,
+            },
+            "input_features": self.input_features,
+            "history": self.history_,
+            "classes_": self.classes_,
+            "n_classes_": self.n_classes_,
+        }
+
+    @classmethod
+    def load_state_dict(cls, checkpoint):
+        model = cls(**checkpoint["init_params"])
+        model._build_model(checkpoint["input_features"], checkpoint['n_classes_'])
+
+        model.model_.load_state_dict(checkpoint["model_state_dict"])
+        model.model_.eval() # Set model to evaluation mode
+
+        model.history_ = checkpoint["history"]
+        model.classes_ = checkpoint["classes_"]
+        model.n_classes_ = checkpoint["n_classes_"]
+        model.is_fitted_ = True
+
+        return model
