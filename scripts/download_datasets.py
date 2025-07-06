@@ -1,6 +1,9 @@
 from pathlib import Path
 
 import requests
+import torch
+
+from src.datasets import SyntheticDataset
 
 TIMEDRL_REPO_URL = "blacksnail789521/TimeDRL"
 LOCAL_OUT_DIR = Path(__file__).parent.parent / "datasets"
@@ -33,6 +36,21 @@ def main():
     print(f"Downloading datasets from: github.com/{TIMEDRL_REPO_URL}")
     download_github_folder(TIMEDRL_REPO_URL, "dataset", LOCAL_OUT_DIR)
     print("Successfully downloaded all datasets!")
+
+    print("Creating snythetic dataset ...")
+    out_dir = LOCAL_OUT_DIR / "classification/Synthetic"
+    out_dir.mkdir(exist_ok=True, parents=True)
+    synthetic = SyntheticDataset(
+        n_samples=1400, seq_length=128, n_channels=4, n_classes=4, seed=2954376427
+    )
+    for name, range in [("train", (0, 1000)), ("val", (1000, 1200)), ("test", (1200, 1400))]:
+        torch.save({
+            "interference_times": synthetic.interference_times,
+            "samples": synthetic.samples[range[0] : range[1]],
+            "labels": synthetic.labels[range[0] : range[1]],
+        }, out_dir / f"{name}.pt")
+    print(f"Saved synthetic dataset to: {out_dir}")
+    
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Dict, Optional
 
+import numpy as np
 import pandas as pd
 import torch
 from torch import Tensor
@@ -128,6 +129,58 @@ class ForecastingDataset(Dataset):
         if self.transform is not None:
             return self.transform(*return_value)
         return return_value
+
+
+class SyntheticDataset(ClassificationDataset):
+    def __init__(self, n_samples=1000, seq_length=128, n_channels=4, n_classes=4, seed=None):
+        self.n_samples = n_samples
+        self.seq_length = seq_length
+        self.n_channels = n_channels
+        self.n_classes = n_classes
+
+        if seed is not None:
+            np.random.seed(seed)
+        
+        # Initialize dataset parameters
+        self.t = np.linspace(0, 4 * np.pi, self.seq_length)
+        self.frequencies = np.random.uniform(0.1, 2.0, size=self.n_channels)
+        self.interference_times = np.random.uniform(0, 4 * np.pi, size=(self.n_classes, self.n_channels))
+        
+        # Generate dataset
+        samples, labels = self._generate_dataset()
+        self.samples = torch.from_numpy(samples)
+        self.labels = torch.from_numpy(labels).long()
+        
+    def _apply_interference(self, signal: np.ndarray, class_idx: int):
+        """Apply class-specific interference to the signal."""
+        time = np.linspace(0, 4 * np.pi, self.seq_length)
+        center_time = self.interference_times[class_idx].reshape(-1, 1)
+        DURATION, AMPLITUDE = 0.2, 1.5
+
+        interference = (
+            AMPLITUDE
+            * np.exp(-((time - center_time) ** 2) / (2 * DURATION**2))
+            * np.random.choice([-1, 1], size=center_time.shape)
+        )
+        interference = np.transpose(interference, (1, 0))
+        return signal + interference
+
+    def _generate_dataset(self):
+        samples = np.zeros((self.n_samples, self.seq_length, self.n_channels))
+        labels = np.zeros(self.n_samples, dtype=int)
+        
+        for i in range(self.n_samples):
+            class_idx = np.random.randint(self.n_classes)
+            labels[i] = class_idx
+
+            for c in range(self.n_channels):
+                phase_shift = np.random.uniform(0, 4 * np.pi)
+                samples[i, :, c] = np.sin(self.frequencies[c] * self.t + phase_shift)
+            samples[i] = self._apply_interference(samples[i], class_idx)
+        
+        # Add noise
+        samples += 0.1 * np.random.normal(size=samples.shape)
+        return samples, labels
 
 
 if __name__ == "__main__":
