@@ -38,7 +38,7 @@ class ClassificationDataset(Dataset):
         if self.dataset_path.suffix != ".pt":
             raise ValueError(f"Dataset file must have .pt extension, got {self.dataset_path.suffix}")
 
-        self.dataset: Dict[str, Tensor] = torch.load(self.dataset_path, map_location, weights_only=True)
+        self.dataset: Dict[str, Tensor] = torch.load(self.dataset_path, map_location, weights_only=False)
 
         # The samples is of shape: (N, T, C) where:
         #   - N = Number of samples
@@ -153,13 +153,12 @@ class SyntheticDataset(ClassificationDataset):
         
     def _apply_interference(self, signal: np.ndarray, class_idx: int):
         """Apply class-specific interference to the signal."""
-        time = np.linspace(0, 4 * np.pi, self.seq_length)
         center_time = self.interference_times[class_idx].reshape(-1, 1)
         DURATION, AMPLITUDE = 0.2, 1.5
 
         interference = (
             AMPLITUDE
-            * np.exp(-((time - center_time) ** 2) / (2 * DURATION**2))
+            * np.exp(-((self.t - center_time) ** 2) / (2 * DURATION**2))
             * np.random.choice([-1, 1], size=center_time.shape)
         )
         interference = np.transpose(interference, (1, 0))

@@ -21,12 +21,22 @@ def shapley_explainer(model: LinearClassifier, samples: np.ndarray, seed=None):
         return masked[np.newaxis, :]
 
     explainer = shap.Explainer(f, masker, seed=seed)
-    shap_values = explainer(sample_ixs)
+    shap_values = explainer(sample_ixs, batch_size=100)
 
-    avg_shap_magnitudes: np.ndarray = np.mean(np.abs(shap_values.values), axis=0)
-    order = np.argsort(
-        (avg_shap_magnitudes / avg_shap_magnitudes.sum(axis=0)).max(axis=1)
-    )
+    preds = model.predict(samples)
+    importance = np.transpose(shap_values.values, (0, 2, 1))[
+        np.arange(len(preds)), preds
+    ]
+    importance = (
+        (importance - importance.mean(axis=1, keepdims=True))
+        / importance.std(axis=1, keepdims=True)
+    ).mean(axis=0)
+    order = np.argsort(importance)
+
+    # avg_shap_magnitudes: np.ndarray = np.mean(np.abs(shap_values.values), axis=0)
+    # order = np.argsort(
+    # (avg_shap_magnitudes / avg_shap_magnitudes.sum(axis=0)).max(axis=1)
+    # )
     return order, shap_values
 
 

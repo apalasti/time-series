@@ -96,6 +96,7 @@ class LinearReconstructor(RegressorMixin, BaseEstimator):
 
         X_tensor = torch.tensor(X, dtype=torch.float32).to(self._device)
         with torch.inference_mode():
+            self.model_.eval()
             predictions = self.model_(X_tensor)
 
         return predictions.cpu().numpy()
@@ -205,6 +206,7 @@ class LinearClassifier(ClassifierMixin, BaseEstimator):
 
         X_tensor = torch.tensor(X, dtype=torch.float32).to(self._device)
         with torch.inference_mode():
+            self.model_.eval()
             logits = self.model_(X_tensor)
             probabilities = F.softmax(logits, dim=1)
 
