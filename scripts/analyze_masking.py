@@ -1,6 +1,5 @@
 import argparse
 from pathlib import Path
-from typing import Dict, Any
 
 import numpy as np
 import torch
@@ -11,6 +10,7 @@ from src.masking import mask_timesteps, shapley_explainer, diversity_of_unmasked
 from src.linear_models import LinearClassifier
 
 
+NUM_SHAP_TRIALS = 3
 NUM_RANDOM_TRIALS = 15
 
 
@@ -24,11 +24,18 @@ def get_device() -> torch.device:
 
 
 def evaluate_masking_strategies(
-    test_timesteps: np.ndarray, classifier: LinearClassifier, shap_order: np.ndarray
-) -> Dict[str, Any]:
+    train_timesteps: np.ndarray,
+    test_timesteps: np.ndarray,
+    classifier: LinearClassifier,
+):
     """Evaluate accuracy as a function of masking percentage."""
     (_, T, _) = test_timesteps.shape
     masked_percentages = np.linspace(0.0, 0.9, 10)
+
+    shap_orders = [
+        shapley_explainer(classifier, train_timesteps)[0]
+        for _ in range(NUM_SHAP_TRIALS)
+    ]
 
     shap_preds, shap_diversity = [], []
     random_preds, random_diversity = [], []
@@ -37,26 +44,29 @@ def evaluate_masking_strategies(
         masked_count = int(T * percentage)
 
         # SHAP-based masking
-        timesteps_shap = mask_timesteps(test_timesteps, shap_order[:masked_count])
-        shap_preds.append(classifier.predict(timesteps_shap))
-        shap_diversity.append(diversity_of_unmasked(test_timesteps, shap_order[:masked_count]))
+        shap_preds.append([])
+        shap_diversity.append([])
+        for shap_order in shap_orders:
+            timesteps_shap = mask_timesteps(test_timesteps, shap_order[:masked_count])
+            shap_preds[-1].append(classifier.predict(timesteps_shap))
+            shap_diversity[-1].append(diversity_of_unmasked(test_timesteps, shap_order[:masked_count]))
 
         # Random masking trials
-        trial_preds, trial_diversity = [], []
+        random_preds.append([])
+        random_diversity.append([])
         for _ in range(NUM_RANDOM_TRIALS):
             masks = np.array([
                 np.random.choice(np.arange(T), size=masked_count, replace=False)
                 for _ in range(len(test_timesteps))
             ])
             timesteps_random = mask_timesteps(test_timesteps, masks)
-            trial_preds.append(classifier.predict(timesteps_random))
-            trial_diversity.append(diversity_of_unmasked(test_timesteps, masks))
 
-        random_preds.append(trial_preds)
-        random_diversity.append(trial_diversity)
+            random_preds[-1].append(classifier.predict(timesteps_random))
+            random_diversity[-1].append(diversity_of_unmasked(test_timesteps, masks))
 
     return {
         "masked_percentage": masked_percentages,
+        "shap_orders": shap_orders,
         "shap_preds": shap_preds,
         "shap_diversity": shap_diversity,
         "random_preds": random_preds,
@@ -80,14 +90,13 @@ def main():
 
     # Get available models
     available_models = {
-        path.name.rstrip("_pretrained.ckpt")
-        for path in models_path.glob("*_pretrained.ckpt")
+        p.name.rsplit("_", maxsplit=1)[0] for p in models_path.glob("*_pretrained.ckpt")
     }
     print(f"Available pretrained models ({models_path}): {available_models}")
 
     results = {}
     for dataset_name in available_models:
-        print(f"\nAnalyzing dataset: {dataset_name}")
+        print(f"Analyzing dataset: {dataset_name}")
 
         # Load data
         data = load_finetuned_model_data(models_path, dataset_name, device)
@@ -97,18 +106,13 @@ def main():
 
         # Calculate Shapley importance
         print("Calculating importance of each timestep feature based on Shapley values")
-        shap_order, shap_values = shapley_explainer(classifier, train_timesteps, seed=2332)
-        num_timesteps = train_timesteps.shape[1]
 
         # Evaluate masking strategies
-        masking_results = evaluate_masking_strategies(
-            test_timesteps, classifier, shap_order
-        )
+        masking_results = evaluate_masking_strategies(train_timesteps, test_timesteps, classifier)
 
         # Store results
         results[dataset_name] = {
             "classifier_history": classifier.history_,
-            "shap_values": shap_values,
             "labels": test_labels,
             **masking_results
         }
