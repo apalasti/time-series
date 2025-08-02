@@ -1,9 +1,11 @@
-from typing import Union, Literal
+import math
+from typing import Union, Literal, Tuple
 
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.colors import qualitative
 from plotly.subplots import make_subplots
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
@@ -345,3 +347,117 @@ def plot_ts(df: pd.DataFrame):
         showlegend=False,
         margin=dict(l=15, r=15, t=30, b=30)
     )
+
+
+def plot_shap_values(shap_values: np.ndarray, labels: np.ndarray):
+    colors = qualitative.Plotly
+    classes = np.unique(labels)
+
+    fig = make_subplots(
+        rows=math.ceil(len(classes) / 3), cols=3, shared_xaxes=True,
+        vertical_spacing=0.15,
+        subplot_titles=[f"c = {c}" for c in classes]
+    )
+    for idx, c in enumerate(classes):
+        shap_c = shap_values[..., c]
+        for label in classes:
+            y = np.mean(np.abs(shap_c[labels == label]), axis=0)
+            fig.add_scatter(
+                x=np.arange(y.shape[0]), y=y, mode="markers",
+                marker=dict(size=7, color=colors[label]),
+                name=f"Class {label}", legendgroup=f"Class {label}",
+                showlegend=(idx == 0), row=(idx // 3)+1, col=(idx % 3) + 1
+            )
+
+        mean_abs_shap = np.mean(np.abs(shap_c), axis=0)
+        fig.add_scatter(
+            x=np.arange(mean_abs_shap.shape[0]), y=mean_abs_shap,
+            mode="markers", marker=dict(color="black", size=7, symbol="diamond"),
+            name="$\\text{mean}\ |S_c|$", legendgroup="$\\text{mean}\ |S_c|$", showlegend=(idx == 0),
+            row=(idx // 3)+1, col=(idx % 3) + 1
+        )
+
+    fig.update_xaxes(title_text="Timestep", row=len(labels), col=1)
+    fig.update_yaxes(
+        showgrid=True, gridwidth=2, title_text="$\\text{mean}\ |S_c|$",
+        gridcolor="lightgray", griddash="dash",
+    )
+    fig.update_layout(
+        template="simple_white",
+        margin=dict(l=10, r=10, t=40, b=40),
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom", y=-0.15,
+            xanchor="center", x=0.5
+        )
+    )
+    return fig
+
+
+def plot_masking_result(
+    masking_percentages: np.ndarray, *results: Tuple[str, np.ndarray]
+):
+    fig = go.Figure()
+
+    color_palette = qualitative.Plotly
+    color_map = {name.split(",")[0] for name, _ in results}
+    color_map = {
+        name: color_palette[i % len(color_palette)]
+        for i, name in enumerate(sorted(color_map))
+    }
+
+    line_styles = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"]
+    style_map = {name.split(",")[0]: line_styles.copy() for name, _ in results}    
+
+    for idx, (name, result) in enumerate(results):
+        assert result.ndim in (1, 2)
+        if result.ndim == 2:
+            result_mean = result.mean(axis=0)
+        else:
+            result_mean = result
+
+        base_name = name.split(",")[0]
+        color = color_map[base_name]
+        line_style = style_map[base_name].pop(0)
+
+        # Convert hex to rgba for fillcolor with alpha=0.15
+        hex_color = color.lstrip('#')
+        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        fillcolor = f'rgba({r},{g},{b},0.15)'
+
+        fig.add_scatter(
+            x=masking_percentages, y=result_mean,
+            name=name, legendgroup=name, mode="lines+markers",
+            marker=dict(size=8, color=color),
+            line=dict(color=color, dash=line_style),
+        )
+
+        if result.ndim == 2:
+            result_std = result.std(axis=0)
+            fig.add_trace(go.Scatter(
+                x=np.concatenate([masking_percentages, masking_percentages[::-1]]),
+                y=np.concatenate([result_mean + result_std, (result_mean - result_std)[::-1]]),
+                fill='toself', fillcolor=fillcolor,
+                name=name, legendgroup=name, showlegend=False,
+                line=dict(color='rgba(255,255,255,0)'),
+                hoverinfo="skip", visible=True,
+            ))
+
+    fig.update_traces(hovertemplate="%{y:.4f}")
+    fig.update_layout(
+        margin=dict(l=10, r=10, t=20, b=20),
+        template="simple_white", hovermode="x", 
+        xaxis=dict(
+            showgrid=True, gridcolor="lightgray",
+            gridwidth=1, tickmode="array",
+            tickvals=masking_percentages,
+            title="Masked Percentage",
+        ),
+        yaxis=dict(
+            showgrid=True, gridcolor="lightgray",
+            gridwidth=1,
+            title="Metric",
+        ),
+    )
+    return fig

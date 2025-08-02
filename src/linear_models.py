@@ -201,13 +201,15 @@ class LinearClassifier(ClassifierMixin, BaseEstimator):
         self.is_fitted_ = True
         return self
 
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+    def predict_proba(self, X: np.ndarray, return_logits=False) -> np.ndarray:
         check_is_fitted(self)
 
         X_tensor = torch.tensor(X, dtype=torch.float32).to(self._device)
         with torch.inference_mode():
             self.model_.eval()
             logits = self.model_(X_tensor)
+            if return_logits:
+                return logits.cpu().numpy()
             probabilities = F.softmax(logits, dim=1)
 
         return probabilities.cpu().numpy()

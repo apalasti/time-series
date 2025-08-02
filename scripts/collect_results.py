@@ -1,17 +1,16 @@
 import pathlib
 
-import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn.functional as F
+from sklearn.metrics import accuracy_score, cohen_kappa_score, f1_score
 from torch.utils.data import DataLoader
-from sklearn.metrics import accuracy_score, f1_score, cohen_kappa_score
 
+from scripts.utils import get_config, load_datasets
+from src.linear_models import LinearClassifier, LinearReconstructor
 from src.pretraining import PretrainedTimeDRL
-from scripts.utils import load_datasets, get_config
-from src.linear_models import LinearReconstructor, LinearClassifier
-
 
 MODELS_DIR = pathlib.Path(__file__).parent.parent / "models"
 DATASETS = ["FingerMovements", "Epilepsy", "HAR", "PenDigits", "WISDM"]

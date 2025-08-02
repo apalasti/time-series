@@ -236,7 +236,7 @@ class PretrainedTimeDRL(BaseModule):
         timestamp_embeddings = []
         labels = []
 
-        with torch.no_grad():
+        with torch.inference_mode():
             with tqdm(
                 dataloader, total=len(dataloader), unit="batch", leave=True,
                 desc="Extracting representations from dataloader",

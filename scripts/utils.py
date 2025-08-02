@@ -154,7 +154,7 @@ def load_finetuned_model_data(models_path: Path, dataset_name: str, device: torc
             "cls": train_cls,
             "timesteps": train_timesteps,
             "labels": train_labels,
-            # "attn_values": train_attn_values,
+            # "attn_values": train_attn_values, # (N, Layer, Head, From, To)
         },
         "test": {
             "cls": test_cls,
@@ -167,3 +167,12 @@ def load_finetuned_model_data(models_path: Path, dataset_name: str, device: torc
 
     cached_data["classifier"] = classifier
     return cached_data
+
+
+def get_device() -> torch.device:
+    """Determine the best available device for computation."""
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
