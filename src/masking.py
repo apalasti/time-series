@@ -1,4 +1,4 @@
-from typing import Literal, Union, List
+from typing import Literal, List, Optional, Dict, Union
 
 import numpy as np
 import shap
@@ -12,50 +12,78 @@ def evaluate_masking_strategies(
     classifier: LinearClassifier,
     test_timesteps: np.ndarray,
     test_labels: np.ndarray,
-    shap_values: List[np.ndarray],
+    shap_values: List[np.ndarray] = None,
     metric = "accuracy"
 ):
-    # assert train_timesteps.shape[1:] == test_timesteps.shape[1:]
     assert test_labels.ndim == 1 and test_labels.shape[0] == test_timesteps.shape[0]
 
     masked_percents = np.linspace(0, 0.9, 10)
-    # train_preds = classifier.predict(train_timesteps)
-    # test_preds = classifier.predict(test_timesteps)
+    result_dict = {}
 
-    shap_result = np.array([
-        masking_impact(
-            classifier, test_timesteps, test_labels, 
-            shapley_order(shap_values)[test_labels],
-            masked_percents, metric=metric
-        )
-        for shap_values in shap_values
-    ])
+    if shap_values:
+        result_dict["shap"] = np.array([
+            masking_impact(
+                classifier, test_timesteps, test_labels, 
+                shapley_order(shap_values)[test_labels],
+                masked_percents, metric=metric
+            )
+            for shap_values in shap_values
+        ])
 
-    random_result = np.array([
+    result_dict["diversity"] = np.array([
         masking_impact(
             classifier, test_timesteps, test_labels,
-            masked_percentages=masked_percents,
-            order="random", metric=metric
+            diversity_order(test_timesteps),
+            masked_percents, metric=metric
+        ),
+    ])
+
+    result_dict["random"] = np.array([
+        masking_impact(
+            classifier, test_timesteps, test_labels,
+            # TODO: Try a different approach of random order
+            random_order(test_timesteps),
+            masked_percents, metric=metric
         )
         for _ in range(15)
     ])
-    return {f"shap": shap_result, "random": random_result}
+    return result_dict
+
+
+def evaluate_masking_strategies_v2(
+    classifier: LinearClassifier,
+    test_timesteps: np.ndarray,
+    test_labels: np.ndarray,
+    strategies: Dict[str, Union[np.ndarray, List[np.ndarray]]],
+    metric = "accuracy"
+):
+    assert test_labels.ndim == 1 and test_labels.shape[0] == test_timesteps.shape[0]
+
+    masked_percents = np.linspace(0, 0.9, 10)
+    result_dict = {}
+    for strategy, orders in strategies.items():
+        orders = orders if isinstance(orders, list) else [orders]
+        result_dict[strategy] = np.array([
+            masking_impact(
+                classifier, test_timesteps, test_labels, order,
+                masked_percents, metric=metric,
+            )
+            for order in orders
+        ])
+    return result_dict
 
 
 def masking_impact(
     classifier: LinearClassifier,
     timesteps: np.ndarray,
     labels: np.ndarray,
-    order: Union[np.ndarray, Literal["random"]],
+    order: np.ndarray,
     masked_percentages=None,
     metric: Literal["accuracy", "f1", "auc_ovo", "auc_ovr"] = "accuracy",
+    mask=None,
 ):
-    assert metric in ("accuracy", "f1", "auc_ovo", "auc_ovr")
+    assert metric in {"accuracy", "f1", "auc_ovo", "auc_ovr"}
     N, T, _ = timesteps.shape
-    if isinstance(order, str) and order == "random":
-        order = np.array(
-            [np.random.choice(np.arange(T), size=T, replace=False) for _ in range(N)]
-        )
 
     assert (order.ndim == 1 and order.shape == (T,)) or (
         order.ndim == 2 and order.shape == (N, T)
@@ -70,15 +98,15 @@ def masking_impact(
         masked_ixs = order[..., :masked_count]
 
         if metric == "accuracy":
-            masked_timesteps = mask_timesteps(timesteps, masked_ixs)
+            masked_timesteps = mask_timesteps(timesteps, masked_ixs, mask)
             preds = classifier.predict(masked_timesteps)
             metrics.append(accuracy_score(labels, preds))
         elif metric == "f1":
-            masked_timesteps = mask_timesteps(timesteps, masked_ixs)
+            masked_timesteps = mask_timesteps(timesteps, masked_ixs, mask)
             preds = classifier.predict(masked_timesteps)
             metrics.append(f1_score(labels, preds, average="macro"))
         elif metric == "auc_ovr":
-            masked_timesteps = mask_timesteps(timesteps, masked_ixs)
+            masked_timesteps = mask_timesteps(timesteps, masked_ixs, mask)
             probs = classifier.predict_proba(masked_timesteps)
             metrics.append(
                 roc_auc_score(
@@ -91,7 +119,7 @@ def masking_impact(
             if classifier.n_classes_ == 2:
                 metrics[-1] = np.stack([metrics[-1], metrics[-1]], axis=-1)
         elif metric == "auc_ovo":
-            masked_timesteps = mask_timesteps(timesteps, masked_ixs)
+            masked_timesteps = mask_timesteps(timesteps, masked_ixs, mask)
             probs = classifier.predict_proba(masked_timesteps)
             metrics.append(
                 roc_auc_score(labels, probs, average="macro", multi_class="ovo")
@@ -123,60 +151,67 @@ def calculate_shapley_values(model: LinearClassifier, samples: np.ndarray, seed=
 
 
 def shapley_order(shap_values):
-    # assert (
-        # labels.ndim == 1
-        # and shap_values.shape[0] == labels.shape[0]
-    # ), (
-        # f"`labels` must be 1D (received shape: {labels.shape}), "
-        # f"and its first dimension must match the first dimension of `shap_values` "
-        # f"(got {shap_values.shape[0]} and {labels.shape[0]})."
-    # )
     shap_values = np.transpose(shap_values.values, (0, 2, 1))
     importance = np.abs(shap_values).mean(axis=0)
-    # importance = np.array([
-    # np.abs(shap_values.values[pred == preds, :, pred]).mean(axis=0)
-    # for pred in np.unique(preds)
-    # ])
-    # importance = np.array([
-        # np.max(np.abs(shap_values[label == labels]).mean(axis=0), axis=0)
-        # for label in np.unique(labels)
-    # ])
     return np.argsort(importance, axis=-1)
-    # return np.argsort(np.abs(shap_values).mean(axis=0).T)
 
 
-def mask_timesteps(samples: np.ndarray, masked_cols: np.ndarray) -> np.ndarray:
-    """Mask specified timesteps in time series samples by setting them to zero.
-    
+def random_order(timesteps: np.ndarray, all_unique=True):
+    N, T, _ = timesteps.shape
+    if all_unique:
+        # Different order for each sample
+        return np.array(
+            [np.random.choice(np.arange(T), size=T, replace=False) for _ in range(N)]
+        )
+
+    order = np.random.choice(np.arange(T), size=T, replace=False)
+    return np.repeat(order[np.newaxis], repeats=N, axis=0)
+
+
+def mask_timesteps(
+    samples: np.ndarray, masked_cols: np.ndarray, mask: Optional[np.ndarray] = None
+) -> np.ndarray:
+    """Mask specified timesteps in samples (shape: n_samples, n_timesteps, n_features).
+
     Args:
-        samples: Input time series data of shape (n_samples, n_timesteps, n_features)
-        masked_cols: Indices of timesteps to mask. Can be:
-            - 1D array: Same timesteps masked for all samples
-            - 2D array: Per-sample masking with shape (n_samples, n_masked_timesteps)
-            
-    Returns:
-        np.ndarray: Masked time series data with same shape as input
-        
-    Raises:
-        ValueError: If masked_cols is not 1D or 2D, or if 2D shape doesn't match samples
+        samples: Input array.
+        masked_cols: Timesteps to replace (1D: same for all, 2D: per-sample).
+        mask: Replacement values (default zeros).
     """
+    _, T, D = samples.shape
     masked = samples.copy()
     if masked_cols.size == 0:
         return masked
 
+    if mask is None:
+        mask = np.zeros((T, D))
+
+    assert mask.shape == (T, D), f"mask should be of shape ({T}, {D}), given: {mask.shape}"
+    assert masked_cols.ndim in {1, 2}, f"masked_cols must be a 1D or 2D numpy array, shape given: {masked_cols.shape}"
+
     if masked_cols.ndim == 1:
-        masked[:, masked_cols] = 0.0
+        masked[:, masked_cols] = mask[np.newaxis, masked_cols]
     elif masked_cols.ndim == 2:
-        if masked_cols.shape[0] != samples.shape[0]:
-            raise ValueError(
-                f"If masked_cols is 2D, its first dimension "
-                f"({masked_cols.shape[0]}) must match the number of samples "
-                f"({samples.shape[0]}) for per-sample masking."
-            )
-        masked[np.arange(samples.shape[0])[:, np.newaxis], masked_cols] = 0.0
-    else:
-        raise ValueError("masked_cols must be a 1D or 2D numpy array.")
+        assert samples.shape[0] == masked_cols.shape[0]
+        row = np.arange(samples.shape[0])[:, np.newaxis]
+        masked[row, masked_cols] = mask[masked_cols]
     return masked
+
+
+def diversity_order(timesteps: np.ndarray):
+    return np.argsort(-diversity(timesteps), axis=-1)
+
+
+def diversity(timesteps: np.ndarray):
+    (N, T, _) = timesteps.shape
+    # For each sample, compute the mean cosine similarity of each timestep to all others (excluding self)
+    mean_cos_sim = np.empty((N, T))
+    for i in range(N):
+        cos_sim = cosine_similarity(timesteps[i])
+        # Exclude diagonal (self-similarity) for each timestep
+        for j in range(T):
+            mean_cos_sim[i, j] = (np.sum(cos_sim[j]) - cos_sim[j, j]) / (T - 1)
+    return mean_cos_sim
 
 
 def diversity_of_unmasked(timesteps: np.ndarray, masks: np.ndarray):

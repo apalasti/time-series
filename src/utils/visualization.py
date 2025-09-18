@@ -1,5 +1,5 @@
 import math
-from typing import Union, Literal, Tuple
+from typing import Union, Literal, Tuple, Dict
 
 import numpy as np
 import pandas as pd
@@ -354,7 +354,7 @@ def plot_shap_values(shap_values: np.ndarray, labels: np.ndarray):
     classes = np.unique(labels)
 
     fig = make_subplots(
-        rows=math.ceil(len(classes) / 3), cols=3, shared_xaxes=True,
+        rows=math.ceil(len(classes) / 3), cols=min(len(classes), 3), shared_xaxes=True,
         vertical_spacing=0.15,
         subplot_titles=[f"c = {c}" for c in classes]
     )
@@ -362,11 +362,18 @@ def plot_shap_values(shap_values: np.ndarray, labels: np.ndarray):
         shap_c = shap_values[..., c]
         for label in classes:
             y = np.mean(np.abs(shap_c[labels == label]), axis=0)
+            y_std = np.std(np.abs(shap_c[labels == label]), axis=0)
             fig.add_scatter(
                 x=np.arange(y.shape[0]), y=y, mode="markers",
                 marker=dict(size=7, color=colors[label]),
                 name=f"Class {label}", legendgroup=f"Class {label}",
-                showlegend=(idx == 0), row=(idx // 3)+1, col=(idx % 3) + 1
+                showlegend=(idx == 0), row=(idx // 3)+1, col=(idx % 3) + 1,
+                customdata=np.stack([y_std], axis=-1),
+                hovertemplate=(
+                    "Timestep: %{x}<br>"
+                    "Mean(|SHAP|): %{y:.4f}<br>"
+                    "Std(|SHAP|): %{customdata[0]:.4f}<extra></extra>"
+                )
             )
 
         mean_abs_shap = np.mean(np.abs(shap_c), axis=0)
@@ -447,7 +454,7 @@ def plot_masking_result(
     fig.update_traces(hovertemplate="%{y:.4f}")
     fig.update_layout(
         margin=dict(l=10, r=10, t=20, b=20),
-        template="simple_white", hovermode="x", 
+        template="simple_white", hovermode="x",
         xaxis=dict(
             showgrid=True, gridcolor="lightgray",
             gridwidth=1, tickmode="array",
@@ -458,6 +465,77 @@ def plot_masking_result(
             showgrid=True, gridcolor="lightgray",
             gridwidth=1,
             title="Metric",
+        ),
+        legend=dict(
+            orientation="h", yanchor="bottom",
+            y=1.04, xanchor="center",
+            x=0.5, valign="top",
+        ),
+    )
+    return fig
+
+
+def plot_masking_result_v2(
+    masking_percentages: np.ndarray, results: Dict
+):
+    color_palette = qualitative.Plotly + qualitative.Set2 + qualitative.Dark24
+    method_names = sorted({m for result in results.values() for m in result.keys()})
+    method_color_map = {method: color_palette[i % len(color_palette)] for i, method in enumerate(method_names)}
+
+    rows = math.ceil(len(results) / 2)
+    fig = make_subplots(
+        rows=rows, cols=2, 
+        subplot_titles=list(results.keys()),
+        vertical_spacing=0.10,
+        horizontal_spacing=0.07,
+        shared_xaxes=True,
+    )
+    for i, (_, result) in enumerate(results.items()):
+        for method in result.keys():
+            color = method_color_map[method]
+            result_mean = result[method].mean(axis=0) if result[method].ndim else result[method]
+
+            fig.add_scatter(
+                x=masking_percentages, y=result_mean,
+                name=method, mode="lines+markers",
+                marker=dict(size=8, color=color),
+                line=dict(color=color), showlegend=i==0,
+                row=i // 2 + 1, col=i % 2 + 1,
+            )
+            if result[method].ndim == 2:
+                # Convert hex to rgba for fillcolor with alpha=0.15
+                hex_color = color.lstrip('#')
+                r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+                fillcolor = f'rgba({r},{g},{b},0.15)'
+
+                result_std = result[method].std(axis=0)
+                fig.add_trace(go.Scatter(
+                    x=np.concatenate([masking_percentages, masking_percentages[::-1]]),
+                    y=np.concatenate([result_mean + result_std, (result_mean - result_std)[::-1]]),
+                    fill='toself', fillcolor=fillcolor, showlegend=False,
+                    line=dict(color='rgba(255,255,255,0)'),
+                    hoverinfo="skip", visible=True,
+                ), row=i // 2 + 1, col=i % 2 + 1)
+
+    fig.update_traces(hovertemplate="%{y:.4f}")
+    fig.update_xaxes(
+        showgrid=True, gridcolor="lightgray",
+        gridwidth=1, tickmode="array",
+        tickvals=masking_percentages,
+    )
+    fig.update_xaxes(title="Masked Percentage", row=rows)
+    fig.update_yaxes(
+        showgrid=True, gridcolor="lightgray",
+        gridwidth=1,
+    )
+    fig.update_layout(
+        margin=dict(l=10, r=10, t=20, b=20),
+        template="simple_white",
+        hovermode="x",
+        legend=dict(
+            orientation="h", yanchor="bottom",
+            y=1.04, xanchor="center",
+            x=0.5, valign="top",
         ),
     )
     return fig
