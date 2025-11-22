@@ -1,3 +1,4 @@
+import torch
 import torch.nn.functional as F
 from sklearn.metrics import accuracy_score, f1_score
 
@@ -5,8 +6,8 @@ from ..base import BaseModule
 from .patch_tst import PatchTST
 
 
-MODELS = {
-    "patch_tst": PatchTST
+TSL_MODELS = {
+    "PatchTST": PatchTST
 }
 
 
@@ -15,7 +16,7 @@ class TSLModel(BaseModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self.model = MODELS[config["model"]](config)
+        self.model = TSL_MODELS[config["model"]](config)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -47,3 +48,7 @@ class TSLModel(BaseModule):
             "val/accuracy": accuracy_score(targets, preds),
             "val/mf1": f1_score(targets, preds, average="macro"),
         }, on_epoch=True)
+
+    def __call__(self, x_batch):
+        with torch.no_grad(), torch.inference_mode():
+            return self.model(x_batch, None, None, None)
