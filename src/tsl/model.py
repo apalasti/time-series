@@ -4,10 +4,12 @@ from sklearn.metrics import accuracy_score, f1_score
 
 from ..base import BaseModule
 from .patch_tst import PatchTST
+from .informer import Informer
 
 
 TSL_MODELS = {
-    "PatchTST": PatchTST
+    "PatchTST": PatchTST,
+    "Informer": Informer,
 }
 
 
