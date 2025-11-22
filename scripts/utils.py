@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 from src.linear_models import LinearClassifier
 from src.pretraining import PretrainedTimeDRL
-from src.datasets import ClassificationDataset, load_forecasting_dataset
+from src.datasets import ClassificationDataset, StandardizeTransform, load_forecasting_dataset
 from src.time_drl import AttentionInspector
 
 
@@ -23,7 +23,7 @@ def get_config(dataset_name, job_type: Literal["pretraining", "finetuning"]) -> 
     try:
         with open(config_path, "r") as f:
             config: Dict = json.load(f)
-            job_specific = config.pop(job_type, None)
+            job_specific = config.pop(job_type, {})
             # config.pop("finetuning" if job_type == "pretraining" else "pretraining")
             return {**config, **job_specific}
     except FileNotFoundError:
@@ -49,10 +49,8 @@ def load_datasets(dataset_name: str, config: Dict):
         train_ds = ClassificationDataset(dataset_path / "train.pt")
 
         mean, std = train_ds.mean(), train_ds.std()
-        transform = lambda sample, label: (
-            ((sample - mean) / std).float(),
-            label.long(),
-        )
+        transform = StandardizeTransform(mean, std)
+
         train_ds.transform = transform
 
         val_path = dataset_path / "val.pt"
@@ -95,7 +93,8 @@ def load_datasets(dataset_name: str, config: Dict):
 def create_data_loaders(dataset: str, config: Dict):
     train_ds, val_ds, test_ds = load_datasets(dataset, config)
     train_dl = torch.utils.data.DataLoader(
-        train_ds, batch_size=config["batch_size"], shuffle=True
+        train_ds, batch_size=config["batch_size"], shuffle=True,
+        # num_workers=2, persistent_workers=True
     )
     val_dl = torch.utils.data.DataLoader(
         val_ds, batch_size=config["batch_size"], shuffle=False

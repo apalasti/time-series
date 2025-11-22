@@ -182,6 +182,15 @@ class SyntheticDataset(ClassificationDataset):
         return samples, labels
 
 
+class StandardizeTransform:
+    def __init__(self, mean: Tensor, std: Tensor):
+        self.mean = mean
+        self.std = std
+
+    def __call__(self, sample: Tensor, label: Tensor):
+        return ((sample - self.mean) / self.std).float(), label.long()
+
+
 if __name__ == "__main__":
     dataset = ClassificationDataset(
         dataset_path=Path(__file__).parent.parent / "datasets/classification/WISDM/train.pt"
