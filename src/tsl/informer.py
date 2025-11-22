@@ -23,8 +23,8 @@ class Informer(nn.Module):
         self.enc_embedding = DataEmbedding(
             config["input_channels"], 
             config["d_model"], 
-            config["pos_embed_type"], 
-            freq="h", # Does not matter
+            config["pos_embed_type"], # Does not matter 
+            freq="h",                 # Does not matter
             dropout=config["dropout"],
         )
         # NOTE: Not needed for classification 

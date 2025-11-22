@@ -5,11 +5,14 @@ from sklearn.metrics import accuracy_score, f1_score
 from ..base import BaseModule
 from .patch_tst import PatchTST
 from .informer import Informer
+from .itransformer import iTransformer
+from .ns_transformer import NSTransformer
 
 
 TSL_MODELS = {
     "PatchTST": PatchTST,
     "Informer": Informer,
+    "iTransformer": iTransformer,
 }
 
 
