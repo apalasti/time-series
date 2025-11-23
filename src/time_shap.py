@@ -39,20 +39,28 @@ def calculate_shapley_values(model: nn.Module, dataset: ClassificationDataset, l
         finally:
             layer_to_patch.forward = orig_forward
 
+    samples = [
+        torch.unsqueeze(dataset[i][0], dim=0).to(device=device) 
+        for i in range(N)
+    ]
     blank = torch.zeros(n_timesteps, n_dims).to(device=device)
+    import time
+
     def f(timestep_ixs: np.ndarray):
         sample_ix = timestep_ixs.max()
-        x, _ = dataset[sample_ix]
 
-        cond_tensor = torch.from_numpy(timestep_ixs != -1).to(device=device).unsqueeze(1).unsqueeze(-1)
+        cond_tensor = torch.from_numpy(timestep_ixs != -1).unsqueeze(1).unsqueeze(-1).to(device=device, non_blocking=True)
+        
         def patched_forward(x: Tensor, *args, **kwargs):
             x = torch.where(cond_tensor, x, blank).reshape(-1, n_timesteps, n_dims)
-            return orig_forward(x, *args, **kwargs)
+            result = orig_forward(x, *args, **kwargs)
+            return result
 
         layer_to_patch.forward = patched_forward
         with torch.no_grad(), torch.inference_mode():
-            out = model(torch.unsqueeze(x, dim=0).to(device=device))
-            return F.softmax(out, dim=-1).cpu().numpy()
+            out = model(samples[sample_ix])
+            result = F.softmax(out, dim=-1).cpu().numpy()
+        return result
 
     def masker(mask: np.ndarray, sample_ix: np.ndarray):
         return np.where(mask == 0, sample_ix, -1)[np.newaxis, ...]

@@ -13,6 +13,7 @@ TSL_MODELS = {
     "PatchTST": PatchTST,
     "Informer": Informer,
     "iTransformer": iTransformer,
+    "NSTransformer": NSTransformer,
 }
 
 

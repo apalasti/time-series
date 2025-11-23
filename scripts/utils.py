@@ -15,6 +15,7 @@ from src.time_drl import AttentionInspector
 DATASETS_DIR = Path(__file__).parent.parent / "datasets"
 CONFIGS_PATH = Path(__file__).parent.parent / "configs"
 MODELS_PATH = Path(__file__).parent.parent / "models"
+OUT_PATH = Path(__file__).parent.parent / "out"
 
 
 def get_config(dataset_name, job_type: Literal["pretraining", "finetuning"]) -> Dict:
